@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mini vLLM Qwen Chat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      :root {
+        color-scheme: dark light;
+        --bg: #0f172a;
+        --bg-secondary: #020617;
+        --accent: #38bdf8;
+        --accent-soft: rgba(56, 189, 248, 0.1);
+        --user-bubble: #1e293b;
+        --assistant-bubble: #0f766e;
+        --assistant-soft: rgba(15, 118, 110, 0.15);
+        --border-subtle: rgba(148, 163, 184, 0.3);
+        --text-main: #e5e7eb;
+        --text-muted: #9ca3af;
+        --danger: #ef4444;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+          "Segoe UI", sans-serif;
+        background: radial-gradient(circle at top, #0f172a, #020617 50%, #000 100%);
+        color: var(--text-main);
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: stretch;
+        padding: 16px;
+      }
+
+      .app {
+        background: linear-gradient(145deg, #020617 0%, #020617 40%, #020617 100%);
+        border-radius: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        box-shadow:
+          0 18px 45px rgba(15, 23, 42, 0.85),
+          0 0 0 1px rgba(15, 23, 42, 0.9);
+        max-width: 960px;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .app-header {
+        padding: 14px 18px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.08), transparent);
+      }
+
+      .title-block {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .badge {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        background: radial-gradient(circle at 30% 30%, #38bdf8, #0f172a);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+      }
+
+      .title-text {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .title-text strong {
+        font-size: 15px;
+      }
+
+      .title-text span {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 9px;
+        border-radius: 999px;
+        border: 1px solid rgba(56, 189, 248, 0.4);
+        background: rgba(15, 23, 42, 0.85);
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #22c55e;
+        box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.3);
+      }
+
+      .chat-container {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 16px 16px 8px 16px;
+        overflow: hidden;
+        gap: 10px;
+      }
+
+      .messages {
+        flex: 1;
+        background: radial-gradient(circle at top left, #020617, #020617 60%, #020617 100%);
+        border-radius: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        padding: 14px 12px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .message {
+        max-width: 88%;
+        padding: 10px 11px;
+        border-radius: 12px;
+        font-size: 14px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        position: relative;
+      }
+
+      .message.user {
+        align-self: flex-end;
+        background: linear-gradient(135deg, var(--user-bubble), #020617);
+        border-bottom-right-radius: 4px;
+      }
+
+      .message.assistant {
+        align-self: flex-start;
+        background: radial-gradient(circle at top left, var(--assistant-bubble), var(--assistant-soft));
+        border-bottom-left-radius: 4px;
+      }
+
+      .message .role {
+        display: block;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        margin-bottom: 3px;
+      }
+
+      .message.assistant .role {
+        color: rgba(167, 243, 208, 0.9);
+      }
+
+      .typing-indicator {
+        display: none;
+        font-size: 12px;
+        color: var(--text-muted);
+        padding: 4px 2px 0 2px;
+      }
+
+      .typing-indicator.visible {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .dots {
+        display: inline-flex;
+        gap: 4px;
+      }
+
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--text-muted);
+        opacity: 0.4;
+        animation: pulse 1s infinite ease-in-out;
+      }
+
+      .dot:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+
+      .dot:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          transform: translateY(0);
+          opacity: 0.4;
+        }
+        50% {
+          transform: translateY(-2px);
+          opacity: 1;
+        }
+      }
+
+      .input-row {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 6px 2px 2px 2px;
+      }
+
+      .input-main {
+        display: flex;
+        gap: 8px;
+      }
+
+      .input-main textarea {
+        flex: 1;
+        min-height: 46px;
+        max-height: 120px;
+        resize: none;
+        border-radius: 14px;
+        border: 1px solid var(--border-subtle);
+        padding: 9px 11px;
+        background: rgba(15, 23, 42, 0.9);
+        color: var(--text-main);
+        font-size: 14px;
+      }
+
+      .input-main textarea:focus {
+        outline: none;
+        border-color: rgba(56, 189, 248, 0.8);
+        box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.4);
+      }
+
+      .send-btn {
+        border: none;
+        border-radius: 999px;
+        padding: 0 18px;
+        background: radial-gradient(circle at 30% 0%, #38bdf8, #0ea5e9);
+        color: #0b1220;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-width: 84px;
+      }
+
+      .send-btn[disabled] {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      .send-btn span.icon {
+        font-size: 15px;
+      }
+
+      .options-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+
+      .options-left {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .checkbox {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .checkbox input {
+        width: 12px;
+        height: 12px;
+      }
+
+      .error {
+        color: var(--danger);
+      }
+
+      @media (max-width: 640px) {
+        .app {
+          border-radius: 14px;
+        }
+
+        .messages {
+          padding: 10px 8px;
+        }
+
+        .message {
+          max-width: 100%;
+        }
+
+        .send-btn {
+          padding: 0 14px;
+          min-width: 70px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <div class="title-block">
+          <div class="badge">Q</div>
+          <div class="title-text">
+            <strong>Mini vLLM · Qwen Chat</strong>
+            <span>流式对话 · REST & Web UI</span>
+          </div>
+        </div>
+        <div class="status-pill" id="status-pill">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">Connecting...</span>
+        </div>
+      </header>
+
+      <main class="chat-container">
+        <section class="messages" id="messages"></section>
+        <div class="typing-indicator" id="typing">
+          <span>Assistant 正在生成</span>
+          <span class="dots">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+          </span>
+        </div>
+        <section class="input-row">
+          <div class="input-main">
+            <textarea
+              id="input"
+              placeholder="请输入你的问题，按 Enter 发送，Shift+Enter 换行..."
+            ></textarea>
+            <button class="send-btn" id="send-btn">
+              <span class="icon">➤</span>
+              <span>发送</span>
+            </button>
+          </div>
+          <div class="options-row">
+            <div class="options-left">
+              <label class="checkbox">
+                <input type="checkbox" id="stream-toggle" checked />
+                <span>流式输出</span>
+              </label>
+            </div>
+            <div id="hint" class="hint">
+              模型服务运行在
+              <code>POST /v1/chat/completions</code>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const messagesEl = document.getElementById("messages");
+      const inputEl = document.getElementById("input");
+      const sendBtn = document.getElementById("send-btn");
+      const typingEl = document.getElementById("typing");
+      const streamToggleEl = document.getElementById("stream-toggle");
+      const statusTextEl = document.getElementById("status-text");
+      const statusDotEl = document.getElementById("status-dot");
+
+      let busy = false;
+      /** 本地维护的对话历史，发送给后端的 messages 字段 */
+      const history = [];
+
+      function setBusy(nextBusy) {
+        busy = nextBusy;
+        sendBtn.disabled = nextBusy;
+        typingEl.classList.toggle("visible", nextBusy);
+      }
+
+      function setStatus(ok, text) {
+        statusTextEl.textContent = text;
+        if (ok) {
+          statusDotEl.style.background = "#22c55e";
+          statusDotEl.style.boxShadow = "0 0 0 4px rgba(34,197,94,0.3)";
+        } else {
+          statusDotEl.style.background = "#ef4444";
+          statusDotEl.style.boxShadow = "0 0 0 4px rgba(239,68,68,0.3)";
+        }
+      }
+
+      async function checkHealth() {
+        try {
+          const res = await fetch("/health");
+          if (!res.ok) throw new Error("bad status");
+          const data = await res.json();
+          setStatus(true, data.status === "ok" ? "Online" : data.status);
+        } catch (e) {
+          setStatus(false, "Offline");
+        }
+      }
+
+      function appendMessage(role, content) {
+        const div = document.createElement("div");
+        div.className = `message ${role}`;
+        const roleSpan = document.createElement("span");
+        roleSpan.className = "role";
+        roleSpan.textContent = role === "user" ? "User" : "Assistant";
+        div.appendChild(roleSpan);
+        const textNode = document.createElement("div");
+        textNode.textContent = content;
+        div.appendChild(textNode);
+        messagesEl.appendChild(div);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function updateLastAssistantMessage(text) {
+        const nodes = messagesEl.querySelectorAll(".message.assistant");
+        const last = nodes[nodes.length - 1];
+        if (!last) return;
+        const contentNode = last.lastElementChild;
+        if (contentNode) {
+          contentNode.textContent = text;
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+      }
+
+      async function sendMessage() {
+        const text = inputEl.value.trim();
+        if (!text || busy) return;
+
+        setBusy(true);
+        inputEl.value = "";
+        appendMessage("user", text);
+        history.push({ role: "user", content: text });
+
+        const body = {
+          model: "qwen2.5-3b",
+          messages: [
+            {
+              role: "system",
+              content: "You are a helpful Chinese-speaking assistant.",
+            },
+            ...history,
+          ],
+          stream: streamToggleEl.checked,
+          max_tokens: 512,
+          temperature: 0.7,
+          top_p: 0.9,
+        };
+
+        try {
+          if (!body.stream) {
+            const res = await fetch("/v1/chat/completions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            if (!res.ok) {
+              const errText = await res.text();
+              throw new Error(errText || res.statusText);
+            }
+            const data = await res.json();
+            const content =
+              data.choices?.[0]?.message?.content ??
+              "[No content in completion]";
+            appendMessage("assistant", content);
+            history.push({ role: "assistant", content });
+          } else {
+            // 使用 EventSource 调用简化流式接口，仅基于当前 user 输入构造 prompt
+            appendMessage("assistant", "");
+            let fullText = "";
+            const es = new EventSource(
+              `/v1/chat/stream?q=${encodeURIComponent(text)}`
+            );
+
+            es.onmessage = async (event) => {
+              const payload = event.data.trim();
+              if (!payload || payload === "[DONE]") {
+                es.close();
+                // 流式结束后将完整回复写入历史
+                history.push({ role: "assistant", content: fullText });
+                setBusy(false);
+                return;
+              }
+              try {
+                const obj = JSON.parse(payload);
+                const delta =
+                  obj.choices?.[0]?.delta?.content ??
+                  obj.choices?.[0]?.message?.content ??
+                  "";
+                if (delta) {
+                  fullText += delta;
+                  updateLastAssistantMessage(fullText);
+                  await new Promise(requestAnimationFrame);
+                }
+              } catch (e) {
+                // 忽略无法解析的 data
+              }
+            };
+
+            es.onerror = () => {
+              es.close();
+              updateLastAssistantMessage(
+                fullText || "[错误] 流式连接中断，请稍后重试。"
+              );
+              history.push({ role: "assistant", content: fullText });
+              setBusy(false);
+            };
+
+            // 注意：流式模式下，不在此分支内调用 setBusy(false)，而是在 onmessage/onerror 中处理
+            return;
+          }
+        } catch (err) {
+          appendMessage(
+            "assistant",
+            "[错误] 请求失败：" + (err?.message || String(err))
+          );
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      sendBtn.addEventListener("click", () => {
+        sendMessage();
+      });
+
+      inputEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      checkHealth();
+    </script>
+  </body>
+  </html>
+
