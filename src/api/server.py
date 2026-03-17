@@ -235,7 +235,7 @@ def root() -> FileResponse:
 
 
 @app.get("/metrics/basic")
-def metrics_basic() -> Dict[str, Any]:
+def metrics_basic(window_seconds: int = Query(300, ge=60, le=3600, description="统计时间窗口（秒）")) -> Dict[str, Any]:
     """
     返回最近一段时间（默认 5 分钟）的简单统计：
     - request_count
@@ -243,7 +243,7 @@ def metrics_basic() -> Dict[str, Any]:
     - avg_prompt_len
     - avg_completion_len
     """
-    return basic_metrics.snapshot()
+    return basic_metrics.snapshot(window_seconds=window_seconds)
 
 
 @app.get("/v1/chat/stream")

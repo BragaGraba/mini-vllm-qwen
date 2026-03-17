@@ -101,4 +101,13 @@ vllm serve ~/models/Qwen2.5-3B-Instruct   --dtype float16   --max-model-len 4096
     }'
   ```
 
+- **基础监控（GET /metrics/basic）**
+
+  ```bash
+  curl "http://localhost:8000/metrics/basic"
+  curl "http://localhost:8000/metrics/basic?window_seconds=60"
+  ```
+
+  返回 JSON：`window_seconds`、`request_count`、`avg_duration_ms`、`avg_prompt_len`、`avg_completion_len`。Web 页顶部监控栏会定期调用该接口并展示。
+
 > 说明：完整 OpenAPI/Swagger 文档可在服务启动后访问 `http://localhost:8000/docs`。

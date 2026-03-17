@@ -112,6 +112,40 @@
         box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.3);
       }
 
+      .metrics-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        font-size: 12px;
+        color: var(--text-muted);
+        background: rgba(15, 23, 42, 0.6);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+      }
+
+      .metrics-label {
+        flex-shrink: 0;
+      }
+
+      #metrics-content {
+        flex: 1;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .metrics-refresh {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 2px 6px;
+        font-size: 14px;
+        border-radius: 4px;
+      }
+
+      .metrics-refresh:hover {
+        color: var(--accent);
+      }
+
       .chat-container {
         flex: 1;
         display: flex;
@@ -337,6 +371,12 @@
         </div>
       </header>
 
+      <section class="metrics-bar" id="metrics-bar">
+        <span class="metrics-label">监控（最近 5 分钟）</span>
+        <span id="metrics-content">—</span>
+        <button type="button" class="metrics-refresh" id="metrics-refresh" title="刷新">↻</button>
+      </section>
+
       <main class="chat-container">
         <section class="messages" id="messages"></section>
         <div class="typing-indicator" id="typing">
@@ -414,6 +454,31 @@
           setStatus(false, "Offline");
         }
       }
+
+      const metricsContentEl = document.getElementById("metrics-content");
+      const metricsRefreshBtn = document.getElementById("metrics-refresh");
+
+      async function fetchMetrics() {
+        try {
+          const res = await fetch("/metrics/basic?window_seconds=300");
+          if (!res.ok) return;
+          const data = await res.json();
+          const n = data.request_count ?? 0;
+          const avgMs = (data.avg_duration_ms ?? 0).toFixed(0);
+          const avgPrompt = (data.avg_prompt_len ?? 0).toFixed(0);
+          const avgComp = (data.avg_completion_len ?? 0).toFixed(0);
+          metricsContentEl.textContent =
+            n === 0
+              ? "暂无请求"
+              : `请求数 ${n} · 平均延迟 ${avgMs} ms · 平均 prompt ${avgPrompt} · 平均回复 ${avgComp}`;
+        } catch (e) {
+          metricsContentEl.textContent = "—";
+        }
+      }
+
+      metricsRefreshBtn.addEventListener("click", fetchMetrics);
+      fetchMetrics();
+      setInterval(fetchMetrics, 30000);
 
       function appendMessage(role, content) {
         const div = document.createElement("div");
