@@ -24,6 +24,17 @@ class DummyLLM:
         return [Output(f"echo: {prompts[0]}")]
 
 
+class FollowupUserDummyLLM:
+    """模拟模型在回答后继续生成下一轮 User。"""
+
+    def generate(self, prompts, sampling_params):
+        class Output:
+            def __init__(self, text: str) -> None:
+                self.outputs = [types.SimpleNamespace(text=text)]
+
+        return [Output("这是回答内容。\nUser: 继续追问...")]
+
+
 def _patch_engine_llm(engine: MiniVLLMEngine, dummy: DummyLLM) -> None:
     engine._llm = dummy  # type: ignore[attr-defined]
 
@@ -76,4 +87,85 @@ def test_generate_batch_calls_generate(monkeypatch):
 
     assert len(outputs) == len(prompts)
     assert calls["count"] == len(prompts)
+
+
+def test_generate_sets_stop_sequences_to_prevent_self_chat():
+    engine = MiniVLLMEngine()
+    dummy = DummyLLM()
+    _patch_engine_llm(engine, dummy)
+
+    _ = engine.generate("hello", stream=False)
+
+    stop = getattr(dummy._last_params, "stop", None)
+    assert stop is not None
+    assert "\nUser:" in stop
+    assert "\nAssistant:" in stop
+    assert "\nSystem:" in stop
+
+
+def test_generate_strips_followup_user_turn_from_output():
+    engine = MiniVLLMEngine()
+    _patch_engine_llm(engine, FollowupUserDummyLLM())
+
+    out = engine.generate("hello", stream=False)
+
+    assert out == "这是回答内容。"
+    assert "User:" not in out
+
+
+def test_generate_strips_followup_user_turn_chinese_marker():
+    engine = MiniVLLMEngine()
+
+    class ChineseMarkerDummyLLM:
+        def generate(self, prompts, sampling_params):
+            class Output:
+                def __init__(self, text: str) -> None:
+                    self.outputs = [types.SimpleNamespace(text=text)]
+
+            return [Output("这是回答内容。\n用户：你再详细说说？")]
+
+    _patch_engine_llm(engine, ChineseMarkerDummyLLM())
+
+    out = engine.generate("hello", stream=False)
+
+    assert out == "这是回答内容。"
+    assert "用户：" not in out
+
+
+def test_generate_strips_followup_user_turn_inline_marker():
+    engine = MiniVLLMEngine()
+
+    class InlineUserMarkerDummyLLM:
+        def generate(self, prompts, sampling_params):
+            class Output:
+                def __init__(self, text: str) -> None:
+                    self.outputs = [types.SimpleNamespace(text=text)]
+
+            return [Output("LLM是大型语言模型。 User: 请给出一个使用LLM的例子。")]
+
+    _patch_engine_llm(engine, InlineUserMarkerDummyLLM())
+
+    out = engine.generate("50字简述什么是LLM", stream=False)
+
+    assert out == "LLM是大型语言模型。"
+    assert "User:" not in out
+
+
+def test_generate_strips_followup_user_turn_inline_marker():
+    engine = MiniVLLMEngine()
+
+    class InlineUserMarkerDummyLLM:
+        def generate(self, prompts, sampling_params):
+            class Output:
+                def __init__(self, text: str) -> None:
+                    self.outputs = [types.SimpleNamespace(text=text)]
+
+            return [Output("LLM是大型语言模型。 User: 请给出一个使用LLM的例子。")]
+
+    _patch_engine_llm(engine, InlineUserMarkerDummyLLM())
+
+    out = engine.generate("50字简述什么是LLM", stream=False)
+
+    assert out == "LLM是大型语言模型。"
+    assert "User:" not in out
 

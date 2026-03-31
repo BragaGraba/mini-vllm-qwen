@@ -32,6 +32,30 @@ class MiniVLLMState:
 state = MiniVLLMState()
 
 
+@app.on_event("startup")
+def warmup_model() -> None:
+    """
+    在服务启动阶段完成一次轻量预热，避免首个真实请求承担模型冷启动开销。
+    """
+    cfg = get_app_config()
+    if not cfg.warmup_on_startup:
+        logger.info("Model warmup skipped (MINI_VLLM_WARMUP_ON_STARTUP=false).")
+        return
+
+    logger.info("Model warmup started...")
+    start_ts = time.perf_counter()
+    # 使用极小生成参数触发模型加载和首次编译缓存。
+    state.engine.generate(
+        "你好",
+        stream=False,
+        max_tokens=1,
+        temperature=0.0,
+        top_p=1.0,
+    )
+    duration_ms = (time.perf_counter() - start_ts) * 1000.0
+    logger.info("Model warmup finished in %.2f ms.", duration_ms)
+
+
 @app.get("/health")
 def health() -> Dict[str, Any]:
     """健康检查接口。"""

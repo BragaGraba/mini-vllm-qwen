@@ -43,9 +43,12 @@ vllm serve ~/models/Qwen2.5-3B-Instruct   --dtype float16   --max-model-len 4096
    MINI_VLLM_MAX_NUM_SEQS=2
    MINI_VLLM_MAX_MODEL_LEN=4096
    MINI_VLLM_GPU_MEMORY_UTILIZATION=0.8
+   MINI_VLLM_WARMUP_ON_STARTUP=true
    MINI_VLLM_LOG_LEVEL=INFO
    MINI_VLLM_API_PORT=8000
    ```
+
+   说明：`MINI_VLLM_WARMUP_ON_STARTUP` 默认 `true`，服务启动时会做一次轻量模型预热；设置为 `false` 可关闭预热。
 
 ## 运行方式约定（阶段 0 / 任务 0.3）
 

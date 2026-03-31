@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Callable, Iterable, List, Sequence, Union
 
 from src.core.config import get_generation_config, get_model_config
@@ -56,8 +57,35 @@ class MiniVLLMEngine:
             max_num_seqs=self._max_num_seqs,
             trust_remote_code=True,
             dtype=self._dtype,
+            enforce_eager=True,
         )
         logger.info("Model loaded.")
+
+    @staticmethod
+    def _strip_followup_turns(text: str) -> str:
+        """
+        兜底裁剪：若模型继续生成下一轮角色（User/Assistant/System），
+        仅保留当前 assistant 回答正文，防止出现“自问自答”。
+        """
+        marker_patterns = [
+            # 行内角色切换（例如："...。 User: ..."）
+            r"(?i)(?<=[\s\u3000])(?:user|assistant|system)\s*[:：]",
+            r"(?<=[\s\u3000])(?:用户|助手|系统)\s*[:：]",
+            r"(?im)^[ \t]*(?:user|assistant|system)\s*[:：]",
+            r"(?m)^[ \t]*(?:用户|助手|系统)\s*[:：]",
+            r"(?m)<\|im_start\|>\s*(?:user|assistant|system)",
+            r"(?m)<\|start_header_id\|>\s*(?:user|assistant|system)\s*<\|end_header_id\|>",
+            r"(?m)^#{2,3}\s*(?:User|Assistant|System)\b",
+        ]
+        cut_positions: List[int] = []
+        for pattern in marker_patterns:
+            match = re.search(pattern, text)
+            if match is not None:
+                cut_positions.append(match.start())
+
+        if not cut_positions:
+            return text
+        return text[: min(cut_positions)].rstrip()
 
     def generate(
         self,
@@ -90,6 +118,22 @@ class MiniVLLMEngine:
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
+            # 遇到下一轮角色前缀时立即停止，避免模型在单次请求里继续“自问自答”。
+            stop=[
+                "\nUser:",
+                "\nAssistant:",
+                "\nSystem:",
+                "\nuser:",
+                "\nassistant:",
+                "\nsystem:",
+                "\nUser：",
+                "\nAssistant：",
+                "\nSystem：",
+                "\n用户:",
+                "\n用户：",
+                "<|im_start|>user",
+                "<|start_header_id|>user<|end_header_id|>",
+            ],
         )
 
         # 预处理 hook
@@ -104,6 +148,7 @@ class MiniVLLMEngine:
 
         for fn in self.hook_postprocess:
             text = fn(text)
+        text = self._strip_followup_turns(text)
 
         if not stream:
             return text

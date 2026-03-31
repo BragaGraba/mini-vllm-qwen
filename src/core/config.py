@@ -16,6 +16,11 @@ def _env_str(key: str, default: str = "") -> str:
     return os.environ.get(key, default).strip()
 
 
+def _env_path(key: str, default: str = "") -> str:
+    raw = _env_str(key, default)
+    return os.path.expanduser(raw)
+
+
 def _env_int(key: str, default: int = 0) -> int:
     try:
         return int(os.environ.get(key, str(default)))
@@ -30,11 +35,16 @@ def _env_float(key: str, default: float = 0.0) -> float:
         return default
 
 
+def _env_bool(key: str, default: bool = False) -> bool:
+    raw = _env_str(key, str(default)).lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 @dataclass
 class ModelConfig:
     """模型与推理相关配置。"""
 
-    model_name: str = field(default_factory=lambda: _env_str("MINI_VLLM_MODEL", "Qwen/Qwen2.5-3B-Instruct"))
+    model_name: str = field(default_factory=lambda: _env_path("MINI_VLLM_MODEL", "~/models/Qwen/Qwen2.5-3B-Instruct"))
     """模型名称或路径。"""
     max_num_seqs: int = field(default_factory=lambda: _env_int("MINI_VLLM_MAX_NUM_SEQS", 1))
     """最大并发序列数。"""
@@ -61,6 +71,7 @@ class AppConfig:
     api_host: str = field(default_factory=lambda: _env_str("MINI_VLLM_API_HOST", "0.0.0.0"))
     api_port: int = field(default_factory=lambda: _env_int("MINI_VLLM_API_PORT", 8000))
     log_level: str = field(default_factory=lambda: _env_str("MINI_VLLM_LOG_LEVEL", "INFO").upper())
+    warmup_on_startup: bool = field(default_factory=lambda: _env_bool("MINI_VLLM_WARMUP_ON_STARTUP", True))
 
 
 # 单例式全局配置（按需可改为显式注入）
