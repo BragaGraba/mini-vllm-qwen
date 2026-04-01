@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.core.benchmarking import build_run_id, parse_comma_ints, parse_comma_list, scenario_row  # noqa: E402
+from src.core.benchmarking import build_run_id, parse_comma_list, scenario_row  # noqa: E402
 from src.core.config import get_benchmark_output_dir, get_skip_concurrency_env  # noqa: E402
 
 
@@ -42,6 +42,25 @@ def _merge_skip_reasons(cli_map: dict[int, str], env_n: int | None, env_reason: 
     out = dict(cli_map)
     if env_n is not None and env_n > 0:
         out.setdefault(env_n, env_reason)
+    return out
+
+
+def _nonempty_list(label: str, items: list) -> list:
+    if not items:
+        print(f"error: {label} must resolve to at least one value", file=sys.stderr)
+        raise SystemExit(2)
+    return items
+
+
+def _parse_comma_ints(label: str, raw: str) -> list[int]:
+    parts = [x.strip() for x in raw.split(",") if x.strip()]
+    out: list[int] = []
+    for p in parts:
+        try:
+            out.append(int(p))
+        except ValueError:
+            print(f"error: {label} contains non-integer token {p!r}", file=sys.stderr)
+            raise SystemExit(2) from None
     return out
 
 
@@ -140,14 +159,20 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    run_id = build_run_id(args.model, parse_comma_list(args.dtype)[0] if args.dtype else "fp16")
+    modes = _nonempty_list("--mode", parse_comma_list(args.mode))
+    dtypes = _nonempty_list("--dtype", parse_comma_list(args.dtype))
+    max_model_lens = _nonempty_list("--max-model-len", _parse_comma_ints("--max-model-len", args.max_model_len))
+    max_num_seqs_list = _nonempty_list(
+        "--max-num-seqs",
+        _parse_comma_ints("--max-num-seqs", args.max_num_seqs),
+    )
+    prompt_buckets = _nonempty_list(
+        "--prompt-buckets",
+        [x.lower() for x in parse_comma_list(args.prompt_buckets)],
+    )
+    concurrencies = _nonempty_list("--concurrency", _parse_comma_ints("--concurrency", args.concurrency))
 
-    modes = parse_comma_list(args.mode)
-    dtypes = parse_comma_list(args.dtype)
-    max_model_lens = parse_comma_ints(args.max_model_len)
-    max_num_seqs_list = parse_comma_ints(args.max_num_seqs)
-    prompt_buckets = [x.lower() for x in parse_comma_list(args.prompt_buckets)]
-    concurrencies = parse_comma_ints(args.concurrency)
+    run_id = build_run_id(args.model, dtypes[0])
 
     cli_skip = _parse_skip_concurrency_reason_arg(args.skip_concurrency_reason)
     env_n, env_reason = get_skip_concurrency_env()

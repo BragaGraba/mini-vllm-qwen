@@ -152,8 +152,12 @@ def test_generate_strips_followup_user_turn_inline_marker():
 
 
 def test_benchmark_run_id_format():
+    import re
     from src.core.benchmarking import build_run_id
 
     run_id = build_run_id("qwen", "fp16")
     assert run_id.startswith("run-")
     assert len(run_id) > 12
+    assert re.match(r"^run-qwen-fp16-\d+$", run_id)
+    run_id_pathy = build_run_id("~/models/Qwen/2.5", "bfloat16")
+    assert run_id_pathy.startswith("run-") and "bfloat16" in run_id_pathy and "qwen" in run_id_pathy

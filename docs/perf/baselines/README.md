@@ -2,6 +2,14 @@
 
 This folder is the documented home for benchmark CSV exports and `run_metadata.json` files produced by `scripts/benchmark_inference.py`. You can point outputs here with `--output-dir` or the `MINI_VLLM_BENCHMARK_OUT` environment variable.
 
+## Tests
+
+Install dev dependencies (includes `pytest`):
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 ## Prompt buckets (fixed sizes)
 
 Each bucket maps to a **representative character length** used for workload sizing in the scenario matrix (simple proxy for “short / medium / long” prompts):
