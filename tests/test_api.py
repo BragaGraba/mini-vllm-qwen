@@ -22,6 +22,12 @@ def _iter_sse_data_objects(response):
         yield json.loads(payload)
 
 
+def test_profile_command_documented():
+    with open("README.md", "r", encoding="utf-8") as f:
+        text = f.read()
+    assert "scripts/profile_inference.sh" in text
+
+
 def test_health_ok():
     resp = client.get("/health")
     assert resp.status_code == 200

@@ -114,3 +114,7 @@ vllm serve ~/models/Qwen2.5-3B-Instruct   --dtype float16   --max-model-len 4096
   返回 JSON：`window_seconds`、`request_count`、`avg_duration_ms`、`avg_prompt_len`、`avg_completion_len`。Web 页顶部监控栏会定期调用该接口并展示。
 
 > 说明：完整 OpenAPI/Swagger 文档可在服务启动后访问 `http://localhost:8000/docs`。
+
+## Profiling
+
+Use `scripts/profile_inference.sh` to capture Nsight Systems (`nsys`) profiles of the benchmark driver and write a normalized hotspot summary under `docs/perf/profiles/`. See `docs/perf/profiles/README.md` for options, GPU requirements, and how it pairs with baseline CSVs.
