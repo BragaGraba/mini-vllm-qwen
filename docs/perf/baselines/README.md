@@ -4,6 +4,8 @@ This folder is the documented home for benchmark CSV exports and `run_metadata.j
 
 Design context: [§6 M0 / §2.4 实现状态摘要](../../superpowers/specs/2026-04-01-vllm-v1-inference-optimization-design.md#implementation-status).
 
+**实测报告骨架（复制后按 `run_id` 重命名填写）：** [`TEMPLATE-run-report.md`](TEMPLATE-run-report.md)
+
 ## Tests
 
 Install dev dependencies (includes `pytest`):
