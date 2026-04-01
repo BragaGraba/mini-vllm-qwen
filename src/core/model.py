@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from typing import Callable, Iterable, List, Sequence, Union
 
-from src.core.config import get_generation_config, get_model_config, get_stream_mode
+from src.core.config import get_generation_config, get_model_config, get_stream_mode, get_triton_rmsnorm_enabled
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -60,6 +60,20 @@ class MiniVLLMEngine:
             enforce_eager=True,
         )
         logger.info("Model loaded.")
+        self._optional_rmsnorm_warmup()
+
+    def _optional_rmsnorm_warmup(self) -> None:
+        """When Triton RMSNorm is enabled, exercise ``safe_rmsnorm`` import path on CPU tensors."""
+        if not get_triton_rmsnorm_enabled():
+            return
+        import torch
+
+        from src.core.ops import safe_rmsnorm
+
+        with torch.no_grad():
+            x = torch.ones(1, 4, dtype=torch.float32)
+            w = torch.ones(4, dtype=torch.float32)
+            safe_rmsnorm(x, w)
 
     @staticmethod
     def _strip_followup_turns(text: str) -> str:

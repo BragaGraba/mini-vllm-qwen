@@ -1,8 +1,10 @@
 import types
 
 import pytest
+import torch
 
 from src.core.model import MiniVLLMEngine
+from src.core.ops import safe_rmsnorm
 
 
 class DummyLLM:
@@ -160,6 +162,25 @@ def test_generate_strips_followup_user_turn_inline_marker():
 
     assert out == "LLM是大型语言模型。"
     assert "User:" not in out
+
+
+def test_rmsnorm_triton_flag_falls_back_when_unavailable(monkeypatch):
+    monkeypatch.setenv("MINI_VLLM_ENABLE_TRITON_RMSNORM", "true")
+    x = torch.randn(2, 4, dtype=torch.float32)
+    w = torch.randn(4, dtype=torch.float32)
+    out = safe_rmsnorm(x, w)
+    assert out is not None
+    assert out.shape == x.shape
+
+
+def test_rmsnorm_matches_torch_reference(monkeypatch):
+    monkeypatch.setenv("MINI_VLLM_ENABLE_TRITON_RMSNORM", "false")
+    x = torch.randn(3, 16, dtype=torch.float32)
+    w = torch.randn(16, dtype=torch.float32)
+    eps = 1e-6
+    ref = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps) * w
+    out = safe_rmsnorm(x, w, eps=eps)
+    torch.testing.assert_close(out, ref, rtol=1e-3, atol=1e-4)
 
 
 def test_benchmark_run_id_format():

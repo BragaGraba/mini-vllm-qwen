@@ -118,6 +118,11 @@ def get_skip_concurrency_env() -> tuple[int | None, str]:
     return n, reason
 
 
+def get_triton_rmsnorm_enabled() -> bool:
+    """True when ``MINI_VLLM_ENABLE_TRITON_RMSNORM`` requests the Triton RMSNorm pilot (with runtime fallback)."""
+    return _env_bool("MINI_VLLM_ENABLE_TRITON_RMSNORM", False)
+
+
 def get_stream_mode() -> Literal["char", "token"]:
     """
     Streaming chunking mode from MINI_VLLM_STREAM_MODE: ``char`` (default) or ``token``.
