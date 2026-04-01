@@ -3,7 +3,7 @@ import types
 import pytest
 import torch
 
-from src.core.config import load_runtime_flags
+from src.core.config import OPTIMIZATION_FLAG_ENV_KEYS, load_runtime_flags
 from src.core.model import MiniVLLMEngine
 from src.core.ops import safe_rmsnorm
 
@@ -187,6 +187,11 @@ def test_rmsnorm_matches_torch_reference(monkeypatch):
 def test_decode_attention_flag_exists(monkeypatch):
     monkeypatch.setenv("MINI_VLLM_ENABLE_TRITON_DECODE_ATTN", "true")
     assert load_runtime_flags().enable_decode_attn is True
+
+
+def test_optimization_switch_count_capped():
+    """Design budget: at most 3 optimization env flags; room for one more M4-era flag."""
+    assert len(OPTIMIZATION_FLAG_ENV_KEYS) <= 3
 
 
 def test_benchmark_run_id_format():

@@ -118,3 +118,7 @@ vllm serve ~/models/Qwen2.5-3B-Instruct   --dtype float16   --max-model-len 4096
 ## Profiling
 
 Use `scripts/profile_inference.sh` to capture Nsight Systems (`nsys`) profiles of the benchmark driver and write a normalized hotspot summary under `docs/perf/profiles/`. See `docs/perf/profiles/README.md` for options, GPU requirements, and how it pairs with baseline CSVs.
+
+## Performance / M4 gate
+
+M4 仅在 profiler 汇总显示剩余热点**热点占比超过 8%** 时继续推进；详见 `docs/perf/decisions/m4-go-no-go.md`。

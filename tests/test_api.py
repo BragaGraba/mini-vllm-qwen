@@ -28,6 +28,12 @@ def test_profile_command_documented():
     assert "scripts/profile_inference.sh" in text
 
 
+def test_readme_mentions_m4_threshold():
+    with open("README.md", "r", encoding="utf-8") as f:
+        text = f.read()
+    assert "热点占比超过 8%" in text
+
+
 def test_health_ok():
     resp = client.get("/health")
     assert resp.status_code == 200

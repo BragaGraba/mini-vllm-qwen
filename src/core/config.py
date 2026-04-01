@@ -11,6 +11,12 @@ try:
 except ImportError:
     pass
 
+# 优化相关环境开关的统一清单（设计约束：累计不超过 3 个）；新增开关前必须先评估预算并更新此处与测试。
+OPTIMIZATION_FLAG_ENV_KEYS: tuple[str, ...] = (
+    "MINI_VLLM_ENABLE_TRITON_RMSNORM",
+    "MINI_VLLM_ENABLE_TRITON_DECODE_ATTN",
+)
+
 
 def _env_str(key: str, default: str = "") -> str:
     return os.environ.get(key, default).strip()
