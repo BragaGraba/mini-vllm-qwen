@@ -1,5 +1,7 @@
 # Mini vLLM Qwen 推理链路分析与算子优化设计（Triton 导向）
 
+> **修订说明（与仓库实现同步）：** §1.1、§2、§4.3、§6 各里程碑与 §8、§10 已按当前代码更新（流式模式、指标、`token_ts_ms`、benchmark/profiling 脚本、RMSNorm 试点、M3 合同与 M4 门槛）。**§4.2 性能目标与 24h 稳定性**仍以实测为准。
+
 ## 1. 背景与目标
 
 ### 1.1 背景
@@ -13,8 +15,9 @@
 项目已具备：
 
 - 模型加载与生成参数封装（`model_name/max_num_seqs/max_model_len/dtype`）
-- API 非流式与“伪流式”输出
-- 基础 warmup 与基础指标采集（当前仅请求级 `duration_ms/prompt_len/completion_len`，尚无 TTFT/TPOT/p95/prefill-decode 拆分）
+- API 非流式与流式输出（SSE，`/v1/chat/completions` 与 `/v1/chat/stream` 帧格式一致：`data: …` 后以 **真实换行**结束每一帧）
+- 启动可选 warmup（`MINI_VLLM_WARMUP_ON_STARTUP`）
+- **增强指标**：`GET /metrics/basic` 在滑动时间窗内聚合 `duration_ms`、`prompt_len`、`completion_len`，以及 **TTFT/TPOT 估计**、**p50/p95 延时**、**估计吞吐 tokens/s**、`prefill/decode` 占位字段、`first_token` 与 **token_window** 代理字段（实现见 `src/core/metrics.py` 与 `src/api/server.py` 中 `basic_metrics.record`）
 
 ### 1.2 本文目标
 
@@ -40,18 +43,38 @@
 3. 构造 `SamplingParams`
 4. 执行 `self._llm.generate([prompt], sampling_params)`
 5. 执行 postprocess 与 follow-up turn 裁剪
-6. `stream=False` 返回完整文本；`stream=True` 逐字符 `yield`
+6. `stream=False` 返回完整文本。`stream=True` 时由环境变量 **`MINI_VLLM_STREAM_MODE`** 控制切分方式（实现见 `src/core/model.py`）：
+   - **`char`（默认）**：在完整解码与后处理之后，**逐字符** `yield`。
+   - **`token`（命名沿用；粗粒度子串、非 BPE token）**：同一前提下按 `re.findall(r"\S+\s*", text)` 切成「非空白串 + 尾随空白」块后 `yield`，chunk 数少于字符流，便于观测与压测，**仍非** vLLM 内核级逐 token 流。
 
 ### 2.3 关键观察
 
-1. **当前 stream 非 token 级**  
-   目前流式分支来自“完整文本后二次逐字符切分”，并非 vLLM 原生 token streaming。
+1. **流式语义**  
+   当前仍为「同步 `LLM.generate` 一次解码 → 再切分输出」；真·逐 token 需后续接入异步引擎或 OpenAI 兼容流式 API（可单独立项）。
 
-2. **`enforce_eager=True`**  
+2. **SSE 侧可观测字段**  
+   流式响应每条事件 JSON 带顶层 **`token_ts_ms`**，可与指标中的首块/TPOT 代理一起用于间隔分析。
+
+3. **`enforce_eager=True`**  
    会限制编译优化空间，可能影响吞吐与延迟上界。
 
-3. **批量接口仍为串行占位**  
+4. **批量接口仍为串行占位**  
    `generate_batch()` 当前逐条调用，尚未利用 vLLM 批处理优势。
+
+### 2.4 实现状态摘要（与仓库同步） {#implementation-status}
+
+下列内容已在仓库中落地，便于设计与代码对照（细节以源码为准）：
+
+| 设计章节 | 仓库锚点 |
+|---------|----------|
+| §6 M0 | `scripts/benchmark_inference.py`、`src/core/benchmarking.py`、`docs/perf/baselines/README.md`；`run_id`、`--dry-run` 场景矩阵、可选 `MINI_VLLM_BENCHMARK_OUT` |
+| §6 M0 算子层 / profiling | `scripts/profile_inference.sh`、`docs/perf/profiles/README.md`；无 `nsys` 时为 stub 热点摘要；有 GPU 时需人工从 Nsight 填充分类占比 |
+| §6 M1 指标补充 | `src/core/metrics.py`、`basic_metrics` 扩展字段 |
+| §6 M1 流式 | `MINI_VLLM_STREAM_MODE`、`token_ts_ms`（`src/core/model.py`、`src/api/server.py`） |
+| §6 M2 | `src/core/ops/triton_rmsnorm.py`、`MINI_VLLM_ENABLE_TRITON_RMSNORM`、`safe_rmsnorm` 与 PyTorch fallback；可选 `_optional_rmsnorm_warmup` |
+| §4.3 M3 合同 | `docs/perf/design/decode-attention-contract.md`、`load_runtime_flags()`、`MINI_VLLM_ENABLE_TRITON_DECODE_ATTN`（**kernel 实现仍属后续**） |
+| §6 M4 验收门槛 | `docs/perf/decisions/m4-go-no-go.md`、根目录 `README.md` 中 M4 说明；`src/core/config.OPTIMIZATION_FLAG_ENV_KEYS`（开关预算 ≤3） |
+| 开发依赖 | `requirements-dev.txt`（含 `pytest`） |
 
 ---
 
@@ -102,7 +125,8 @@
 
 1. 目标版本：锁定当前仓库依赖的 vLLM 主版本，不在同一阶段跨大版本升级。
 2. 集成落点：优先采用“仓库内可维护的算子替换层 + 运行时开关”，避免首次迭代就深度改造 vLLM 调度层。
-3. M2 起必须交付“最小可运行集成点”说明：包括模块路径、入口函数、开关变量与 fallback 分支位置。
+3. M2 起必须交付“最小可运行集成点”说明：包括模块路径、入口函数、开关变量与 fallback 分支位置。  
+   **当前仓库（RMSNorm 试点）**：模块 `src/core/ops/triton_rmsnorm.py`，入口 `safe_rmsnorm` / `torch_rmsnorm_fallback`，开关 **`MINI_VLLM_ENABLE_TRITON_RMSNORM`**（`get_triton_rmsnorm_enabled()`），失败路径统一回落 PyTorch；可选暖机 `MiniVLLMEngine._optional_rmsnorm_warmup()`。
 4. 若某优化必须改动 vLLM 源码，需在该里程碑前补充单独风险评审与回退路径。
 5. **M3 decode-attention 执行合同**（目标、输入输出约定、集成边界、回退）见 [`docs/perf/design/decode-attention-contract.md`](../../perf/design/decode-attention-contract.md)；运行时开关为环境变量 **`MINI_VLLM_ENABLE_TRITON_DECODE_ATTN`**（默认关闭，由 `src.core.config.load_runtime_flags()` 读取）。
 
@@ -176,27 +200,31 @@
 - `benchmark` 结果表（CSV/Markdown）
 - profiling 报告（含热点排序）
 
+**实现注记：** 场景矩阵与 `run_id` 由 `scripts/benchmark_inference.py` 输出；算子级热点骨架由 `scripts/profile_inference.sh` 写 `docs/perf/profiles/<run-id>-hotspot-summary.md`；无 GPU/`nsys` 时为占位比例，见 `docs/perf/profiles/README.md`。
+
 ---
 
 ## M1：流式与观测路径修正
 
 ### 目标
 
-将当前“逐字符流式”升级为 token 级可观测路径，为 TPOT 优化提供真实数据。
+将仅逐字符的「后解码切分流」升级为 **可配置、可带上时间戳** 的流式路径，为 TPOT 与间隔分析提供可用数据（在仍使用同步 `LLM.generate` 的前提下）。
 
 ### 动作
 
-1. 引入 token 级输出路径（对齐 vLLM 能力）
-2. API 流式上报 token 时间戳（至少可推导 token 间隔）
+1. 引入 **`MINI_VLLM_STREAM_MODE=char|token`** 的后解码切分（`token` 模式为词边界粗粒度块，见 §2.2）；未来可再接真·逐 token 的引擎能力。
+2. API 流式上报 **`token_ts_ms`**（至少可推导块间隔）。
 3. 指标系统补充：
-   - 首 token 到达时间
-   - 每 N token 滑动耗时
+   - 首 token / 首块 代理时间
+   - 与 decode 跨度相关的 **token_window** 代理（用于 TPOT 粗估计）
 
 ### 验收
 
-- 线上/测试环境可稳定获得 token 级时序数据
+- 线上/测试环境可稳定获得 **带时间戳的流式事件** 与扩展后的 **`/metrics/basic`**
 - 与非流式结果一致性通过（同 seed 与同 `SamplingParams` 下，最终完整文本一致；SSE 分块边界允许不同）
 - `/v1/chat/completions` 与 `/v1/chat/stream` 的 SSE 帧格式统一
+
+**实现注记：** 见 `src/core/model.py`、`src/api/server.py`；单测见 `tests/test_api.py`（含 `token_ts_ms` 与流式相关用例）。
 
 ---
 
@@ -218,6 +246,8 @@
 - 精度/质量验证通过
 - fallback 可在异常时即时回退
 
+**实现注记：** 代码与单测已落地；**线上 AB 收益与固定形状压测**仍须在有 GPU 的环境按 §4.2 补数据。入口见 §4.3 第 3 条及 `tests/test_engine.py` 中 `rmsnorm` 相关用例。
+
 ---
 
 ## M3：主收益阶段（Decode Attention Triton 化）
@@ -238,6 +268,8 @@
 - 长上下文 + 多并发稳定性通过
 - 错误率与质量不退化
 
+**实现注记（当前仓库）：** 已提供执行合同与运行时开关（`load_runtime_flags().enable_decode_attn`、`MINI_VLLM_ENABLE_TRITON_DECODE_ATTN`），见 `docs/perf/design/decode-attention-contract.md`。**Decode attention Triton kernel 与接入 vLLM 路径尚未在本仓库实现。**
+
 ---
 
 ## M4：二阶段优化（MLP/采样）
@@ -255,6 +287,8 @@
 
 - 当热点占比超过预设阈值（例如 >8%）时推进；否则停止该分支
 - 新增开关数量受控（累计不超过 3 个），并保留统一 fallback
+
+**实现注记（当前仓库）：** 进入 M4 的 **go/no-go** 与 **>8% 热点** 说明见 `docs/perf/decisions/m4-go-no-go.md` 与根目录 `README.md`；优化类环境变量清单与预算见 `OPTIMIZATION_FLAG_ENV_KEYS`。**MLP/采样融合本体仍为后续开发。**
 
 ---
 
@@ -288,9 +322,9 @@
 
 ## 8. 对当前仓库的落地建议（先后顺序）
 
-1. **先做可观测性闭环（M0 + M1）**
-   - 没有 token 级时序与阶段拆分数据，不进入 kernel 开发。
-2. **再做低风险试点（M2）**
+1. **先做可观测性闭环（M0 + M1）** — *仓库已具备基线脚本、profiling 脚手架、扩展指标与可配置流式 + `token_ts_ms`；性能门槛仍须实测。*
+   - 没有稳定度量与回归对比时，不进入重内核替换。
+2. **再做低风险试点（M2）** — *RMSNorm 代码路径与 fallback 已具备；收益 AB 待 GPU 数据。*
    - 用 RMSNorm 试点验证“开发-验证-回退”闭环。
 3. **随后主攻 decode attention（M3）**
    - 这是最可能带来核心收益的阶段。
@@ -315,7 +349,9 @@
 | 里程碑 | 核心产物 | 进入条件 | 完成判定 |
 |---|---|---|---|
 | M0 | 基线报表 + run_id + profiling 热点表 | 可稳定跑通基准集 | 指标报表可复现 |
-| M1 | token 级流式与时序指标 | M0 完成 | 可输出 TTFT/TPOT 与统一 SSE |
-| M2 | RMSNorm Triton 试点 + fallback | M1 完成 | 收益与一致性同时达标 |
-| M3 | decode attention 优化 | M2 完成 | TPOT/吞吐达到阶段目标 |
-| M4 | 次热点优化决策与落地 | M3 完成 | 仅在热点占比达阈值时推进 |
+| M1 | 可配置流式 + 时间戳 + 扩展指标 | M0 逻辑完成 | `/metrics/basic` + SSE `token_ts_ms` |
+| M2 | RMSNorm Triton 试点 + fallback | M1 逻辑完成 | 代码/单测通过；**GPU 收益**另验 |
+| M3 | decode attention 优化 | M2 完成 | TPOT/吞吐达到阶段目标；**当前仅合同+开关** |
+| M4 | 次热点优化决策与落地 | M3 完成 | 仅在热点占比达阈值时推进；**决策文档与开关预算已备** |
+
+表后说明：**「逻辑完成」** 表示脚手架与接口已在仓库中；**§4.2 数值成功标准** 与 **24h 稳定性** 仍以实测报告为准，不由单测替代。

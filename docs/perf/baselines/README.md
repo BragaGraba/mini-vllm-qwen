@@ -2,6 +2,8 @@
 
 This folder is the documented home for benchmark CSV exports and `run_metadata.json` files produced by `scripts/benchmark_inference.py`. You can point outputs here with `--output-dir` or the `MINI_VLLM_BENCHMARK_OUT` environment variable.
 
+Design context: [§6 M0 / §2.4 实现状态摘要](../../superpowers/specs/2026-04-01-vllm-v1-inference-optimization-design.md#implementation-status).
+
 ## Tests
 
 Install dev dependencies (includes `pytest`):

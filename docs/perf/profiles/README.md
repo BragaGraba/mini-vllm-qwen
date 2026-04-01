@@ -2,6 +2,8 @@
 
 This folder holds **hotspot summaries** and (by default) **raw Nsight Systems** outputs from `scripts/profile_inference.sh`.
 
+Design context: [§6 M0 算子层 / §2.4](../../superpowers/specs/2026-04-01-vllm-v1-inference-optimization-design.md#implementation-status).
+
 ## Requirements
 
 - **GPU profiling:** Meaningful CUDA kernel data requires a **Linux host with an NVIDIA GPU**, Nsight Systems installed, and `nsys` on `PATH`. WSL2 may work when GPU passthrough and Nsight are set up; otherwise treat profiling as **manual / perf-lab only** — CI can skip it.
