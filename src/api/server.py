@@ -32,6 +32,11 @@ class MiniVLLMState:
 state = MiniVLLMState()
 
 
+def _completion_tokens_estimate(completion_len: int) -> int:
+    """无真实 tokenizer 时用字符长度粗估 token 数（与 metrics 吞吐启发式一致）。"""
+    return max(1, completion_len // 4)
+
+
 @app.on_event("startup")
 def warmup_model() -> None:
     """
@@ -171,10 +176,20 @@ def chat_completions(body: Dict[str, Any]) -> Any:
             duration_ms = (time.perf_counter() - start_ts) * 1000.0
             # 更新会话历史与监控
             state.conversation.append_assistant(content)
+            comp_len = len(content)
+            ct_est = _completion_tokens_estimate(comp_len)
+            # 非流式无首 token 边界：TTFT/首 token 时间近似为整段耗时（见 limitation）
             basic_metrics.record(
                 duration_ms=duration_ms,
                 prompt_len=prompt_len,
-                completion_len=len(content),
+                completion_len=comp_len,
+                ttft_ms=duration_ms,
+                tpot_ms=duration_ms / ct_est,
+                prefill_ms=0.0,
+                decode_ms=duration_ms,
+                first_token_ms=duration_ms,
+                token_window_ms=duration_ms / ct_est,
+                completion_tokens=ct_est,
             )
             resp_obj = _build_response_object(
                 content,
@@ -188,6 +203,7 @@ def chat_completions(body: Dict[str, Any]) -> Any:
             try:
                 buffer: List[str] = []
                 start_ts = time.perf_counter()
+                first_chunk_ms: float | None = None
                 for chunk in state.engine.generate(
                     prompt,
                     stream=True,
@@ -195,6 +211,8 @@ def chat_completions(body: Dict[str, Any]) -> Any:
                     temperature=temperature,
                     top_p=top_p,
                 ):
+                    if first_chunk_ms is None:
+                        first_chunk_ms = (time.perf_counter() - start_ts) * 1000.0
                     buffer.append(chunk)
                     data = {
                         "id": "mini-vllm-qwen-chat",
@@ -214,10 +232,22 @@ def chat_completions(body: Dict[str, Any]) -> Any:
                 full_text = "".join(buffer)
                 duration_ms = (time.perf_counter() - start_ts) * 1000.0
                 state.conversation.append_assistant(full_text)
+                comp_len = len(full_text)
+                ct_est = _completion_tokens_estimate(comp_len)
+                ttft = first_chunk_ms if first_chunk_ms is not None else duration_ms
+                decode_span = max(0.0, duration_ms - ttft)
+                tpot_ms = decode_span / ct_est if ct_est else duration_ms
                 basic_metrics.record(
                     duration_ms=duration_ms,
                     prompt_len=prompt_len,
-                    completion_len=len(full_text),
+                    completion_len=comp_len,
+                    ttft_ms=ttft,
+                    tpot_ms=tpot_ms,
+                    prefill_ms=0.0,
+                    decode_ms=duration_ms,
+                    first_token_ms=ttft,
+                    token_window_ms=decode_span / ct_est if ct_est else None,
+                    completion_tokens=ct_est,
                 )
                 # 结束标记
                 done_message = {
@@ -291,7 +321,10 @@ def chat_stream(q: str = Query(..., description="用户输入的最新一条消�
         try:
             buffer: List[str] = []
             start_ts = time.perf_counter()
+            first_chunk_ms: float | None = None
             for chunk in state.engine.generate(prompt, stream=True):
+                if first_chunk_ms is None:
+                    first_chunk_ms = (time.perf_counter() - start_ts) * 1000.0
                 buffer.append(chunk)
                 data = {
                     "id": "mini-vllm-qwen-chat",
@@ -310,10 +343,22 @@ def chat_stream(q: str = Query(..., description="用户输入的最新一条消�
 
             full_text = "".join(buffer)
             duration_ms = (time.perf_counter() - start_ts) * 1000.0
+            comp_len = len(full_text)
+            ct_est = _completion_tokens_estimate(comp_len)
+            ttft = first_chunk_ms if first_chunk_ms is not None else duration_ms
+            decode_span = max(0.0, duration_ms - ttft)
+            tpot_ms = decode_span / ct_est if ct_est else duration_ms
             basic_metrics.record(
                 duration_ms=duration_ms,
                 prompt_len=prompt_len,
-                completion_len=len(full_text),
+                completion_len=comp_len,
+                ttft_ms=ttft,
+                tpot_ms=tpot_ms,
+                prefill_ms=0.0,
+                decode_ms=duration_ms,
+                first_token_ms=ttft,
+                token_window_ms=decode_span / ct_est if ct_est else None,
+                completion_tokens=ct_est,
             )
             done_message = {
                 "id": "mini-vllm-qwen-chat",
