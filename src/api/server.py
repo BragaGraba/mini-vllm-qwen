@@ -147,7 +147,7 @@ def chat_completions(body: Dict[str, Any]) -> Any:
     """
     兼容 OpenAI 风格的聊天接口：
     - 非流式：默认，返回 JSON
-    - 流式：body.stream = true 时，返回 StreamingResponse，逐条 data: ...\\n\\n
+    - 流式：body.stream = true 时，返回 StreamingResponse（SSE：每条 data: JSON 后以空行结束）
     """
     try:
         messages = body.get("messages") or []
@@ -198,7 +198,7 @@ def chat_completions(body: Dict[str, Any]) -> Any:
             )
             return JSONResponse(resp_obj)
 
-        # 流式接口：SSE 风格 data: ...\\n\\n
+        # 流式接口：SSE（data: <json>\\n\\n）
         async def event_stream() -> AsyncGenerator[bytes, None]:
             try:
                 buffer: List[str] = []
@@ -227,7 +227,7 @@ def chat_completions(body: Dict[str, Any]) -> Any:
                         ],
                     }
                     payload = json.dumps(data, ensure_ascii=False)
-                    yield f"data: {payload}\\n\\n".encode("utf-8")
+                    yield f"data: {payload}\n\n".encode("utf-8")
 
                 full_text = "".join(buffer)
                 duration_ms = (time.perf_counter() - start_ts) * 1000.0
@@ -263,13 +263,13 @@ def chat_completions(body: Dict[str, Any]) -> Any:
                     ],
                 }
                 done_payload = json.dumps(done_message, ensure_ascii=False)
-                yield f"data: {done_payload}\\n\\n".encode("utf-8")
-                yield b"data: [DONE]\\n\\n"
+                yield f"data: {done_payload}\n\n".encode("utf-8")
+                yield b"data: [DONE]\n\n"
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Streaming generation failed: %s", exc)
                 error_payload = {"error": {"message": str(exc)}}
                 error_json = json.dumps(error_payload, ensure_ascii=False)
-                yield f"data: {error_json}\\n\\n".encode("utf-8")
+                yield f"data: {error_json}\n\n".encode("utf-8")
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
     except HTTPException:
@@ -291,11 +291,12 @@ def root() -> FileResponse:
 @app.get("/metrics/basic")
 def metrics_basic(window_seconds: int = Query(300, ge=60, le=3600, description="统计时间窗口（秒）")) -> Dict[str, Any]:
     """
-    返回最近一段时间（默认 5 分钟）的简单统计：
-    - request_count
-    - avg_duration_ms
-    - avg_prompt_len
-    - avg_completion_len
+    返回最近一段时间（默认 5 分钟）的统计（内存 deque，重启清空），包含：
+    - request_count, avg_duration_ms, avg_prompt_len, avg_completion_len
+    - avg_ttft_ms, avg_tpot_ms, p50_duration_ms, p95_duration_ms
+    - throughput_tokens_per_s（窗口内估计输出 token 量 / 总请求耗时，近似吞吐）
+    - avg_prefill_ms, avg_decode_ms（占位/代理字段）
+    - avg_first_token_ms, avg_token_window_ms
     """
     return basic_metrics.snapshot(window_seconds=window_seconds)
 
