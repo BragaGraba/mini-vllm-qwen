@@ -151,21 +151,9 @@ def test_generate_strips_followup_user_turn_inline_marker():
     assert "User:" not in out
 
 
-def test_generate_strips_followup_user_turn_inline_marker():
-    engine = MiniVLLMEngine()
+def test_benchmark_run_id_format():
+    from src.core.benchmarking import build_run_id
 
-    class InlineUserMarkerDummyLLM:
-        def generate(self, prompts, sampling_params):
-            class Output:
-                def __init__(self, text: str) -> None:
-                    self.outputs = [types.SimpleNamespace(text=text)]
-
-            return [Output("LLM是大型语言模型。 User: 请给出一个使用LLM的例子。")]
-
-    _patch_engine_llm(engine, InlineUserMarkerDummyLLM())
-
-    out = engine.generate("50字简述什么是LLM", stream=False)
-
-    assert out == "LLM是大型语言模型。"
-    assert "User:" not in out
-
+    run_id = build_run_id("qwen", "fp16")
+    assert run_id.startswith("run-")
+    assert len(run_id) > 12

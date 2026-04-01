@@ -99,3 +99,20 @@ def get_app_config() -> AppConfig:
     if _app_config is None:
         _app_config = AppConfig()
     return _app_config
+
+
+def get_benchmark_output_dir() -> str:
+    """Directory for benchmark CSV/metadata; empty when unset."""
+    return _env_path("MINI_VLLM_BENCHMARK_OUT", "")
+
+
+def get_skip_concurrency_env() -> tuple[int | None, str]:
+    """If MINI_VLLM_SKIP_CONCURRENCY is set to a positive int, that concurrency is marked skipped."""
+    n = _env_int("MINI_VLLM_SKIP_CONCURRENCY", 0)
+    if n <= 0:
+        return None, ""
+    reason = _env_str(
+        "MINI_VLLM_SKIP_CONCURRENCY_REASON",
+        "skipped via MINI_VLLM_SKIP_CONCURRENCY",
+    )
+    return n, reason
