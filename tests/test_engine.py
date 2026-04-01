@@ -66,6 +66,17 @@ def test_generate_stream_iterates_chunks(monkeypatch):
     assert "".join(chunks).startswith("echo:")
 
 
+def test_generate_stream_emits_token_chunks_not_chars(monkeypatch):
+    monkeypatch.setenv("MINI_VLLM_STREAM_MODE", "token")
+    engine = MiniVLLMEngine()
+    dummy = DummyLLM()
+    _patch_engine_llm(engine, dummy)
+
+    chunks = list(engine.generate("hi", stream=True))
+    joined = "".join(chunks)
+    assert len(chunks) < len(joined)
+
+
 def test_generate_batch_calls_generate(monkeypatch):
     engine = MiniVLLMEngine()
     dummy = DummyLLM()

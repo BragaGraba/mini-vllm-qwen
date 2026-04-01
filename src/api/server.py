@@ -218,6 +218,7 @@ def chat_completions(body: Dict[str, Any]) -> Any:
                         "id": "mini-vllm-qwen-chat",
                         "object": "chat.completion.chunk",
                         "model": model_name,
+                        "token_ts_ms": int(time.time() * 1000),
                         "choices": [
                             {
                                 "index": 0,
@@ -254,6 +255,7 @@ def chat_completions(body: Dict[str, Any]) -> Any:
                     "id": "mini-vllm-qwen-chat",
                     "object": "chat.completion.chunk",
                     "model": model_name,
+                    "token_ts_ms": int(time.time() * 1000),
                     "choices": [
                         {
                             "index": 0,
@@ -331,6 +333,7 @@ def chat_stream(q: str = Query(..., description="用户输入的最新一条消�
                     "id": "mini-vllm-qwen-chat",
                     "object": "chat.completion.chunk",
                     "model": model_name,
+                    "token_ts_ms": int(time.time() * 1000),
                     "choices": [
                         {
                             "index": 0,
@@ -365,6 +368,7 @@ def chat_stream(q: str = Query(..., description="用户输入的最新一条消�
                 "id": "mini-vllm-qwen-chat",
                 "object": "chat.completion.chunk",
                 "model": model_name,
+                "token_ts_ms": int(time.time() * 1000),
                 "choices": [
                     {
                         "index": 0,

@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from typing import Callable, Iterable, List, Sequence, Union
 
-from src.core.config import get_generation_config, get_model_config
+from src.core.config import get_generation_config, get_model_config, get_stream_mode
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -99,6 +99,10 @@ class MiniVLLMEngine:
         """
         生成文本。支持非流式（返回完整字符串）与流式（返回逐块字符串迭代器）。
 
+        流式下 vLLM 同步 ``generate`` 无原生 token 流：``MINI_VLLM_STREAM_MODE=char`` 时按字符
+        yield；``token`` 时在完整解码与后处理之后按粗粒度子词块（词 + 尾随空白）分块 yield，
+        仅为近似，待异步引擎接入后可替换为真实 token 流。
+
         :param prompt: 输入提示。
         :param stream: 是否流式返回；为 True 时返回迭代器，否则返回完整字符串。
         :param max_tokens: 最大生成 token 数。
@@ -153,10 +157,16 @@ class MiniVLLMEngine:
         if not stream:
             return text
 
-        # 流式：vLLM 离线接口无原生 token 流，按字符逐块 yield 以保持接口一致
+        mode = get_stream_mode()
+
         def _stream() -> Iterable[str]:
-            for ch in text:
-                yield ch
+            if mode == "token":
+                for piece in re.findall(r"\S+\s*", text):
+                    if piece:
+                        yield piece
+            else:
+                for ch in text:
+                    yield ch
 
         return _stream()
 

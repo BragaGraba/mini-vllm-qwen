@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from src.api.server import app
@@ -5,6 +7,19 @@ from src.core.metrics import basic_metrics
 
 
 client = TestClient(app)
+
+
+def _iter_sse_data_objects(response):
+    for line in response.iter_lines():
+        if not line:
+            continue
+        s = line.decode("utf-8") if isinstance(line, bytes) else line
+        if not s.startswith("data: "):
+            continue
+        payload = s[6:]
+        if payload.strip() == "[DONE]":
+            continue
+        yield json.loads(payload)
 
 
 def test_health_ok():
@@ -15,7 +30,7 @@ def test_health_ok():
     assert "model_name" in data
 
 
-def test_chat_completions_non_stream(monkeypatch):
+def test_chat_completions_json_reply(monkeypatch):
     # 避免测试时真正加载大模型：用简单假实现替换 MiniVLLMEngine.generate
     from src.api import server as server_module
 
@@ -116,4 +131,110 @@ def test_metrics_snapshot_includes_token_timing_windows():
     assert "avg_token_window_ms" in data
     assert data["avg_first_token_ms"] == 25.0
     assert data["avg_token_window_ms"] == 12.5
+
+
+def test_stream_and_non_stream_have_same_final_text(monkeypatch):
+    from src.api import server as server_module
+
+    full = "The quick brown fox."
+
+    def fake_generate(prompt: str, **kwargs):
+        if kwargs.get("stream"):
+
+            def gen():
+                for c in full:
+                    yield c
+
+            return gen()
+        return full
+
+    monkeypatch.setattr(server_module.state.engine, "generate", fake_generate)
+    payload = {
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    r_ns = client.post("/v1/chat/completions", json={**payload, "stream": False})
+    assert r_ns.status_code == 200
+    non_stream = r_ns.json()["choices"][0]["message"]["content"]
+    r_s = client.post("/v1/chat/completions", json={**payload, "stream": True})
+    assert r_s.status_code == 200
+    stream_text = ""
+    for obj in _iter_sse_data_objects(r_s):
+        if not obj.get("choices"):
+            continue
+        delta = obj["choices"][0].get("delta") or {}
+        stream_text += delta.get("content") or ""
+    assert stream_text == non_stream
+
+
+def test_stream_events_contain_token_timestamps(monkeypatch):
+    from src.api import server as server_module
+
+    def fake_generate(prompt: str, **kwargs):
+        if kwargs.get("stream"):
+
+            def gen():
+                yield "x"
+
+            return gen()
+        return "x"
+
+    monkeypatch.setattr(server_module.state.engine, "generate", fake_generate)
+    r1 = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "m",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+    )
+    assert r1.status_code == 200
+    for obj in _iter_sse_data_objects(r1):
+        if obj.get("choices"):
+            assert "token_ts_ms" in obj
+            assert isinstance(obj["token_ts_ms"], int)
+
+    r2 = client.get("/v1/chat/stream", params={"q": "hello"})
+    assert r2.status_code == 200
+    for obj in _iter_sse_data_objects(r2):
+        if obj.get("choices"):
+            assert "token_ts_ms" in obj
+            assert isinstance(obj["token_ts_ms"], int)
+
+
+def test_stream_token_intervals_derivable(monkeypatch):
+    from src.api import server as server_module
+
+    full = "aabbccdd"
+
+    def fake_generate(prompt: str, **kwargs):
+        if kwargs.get("stream"):
+
+            def gen():
+                for part in ["aa", "bb", "cc", "dd"]:
+                    yield part
+
+            return gen()
+        return full
+
+    monkeypatch.setattr(server_module.state.engine, "generate", fake_generate)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "m",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+    )
+    assert resp.status_code == 200
+    ts_list = [
+        obj["token_ts_ms"]
+        for obj in _iter_sse_data_objects(resp)
+        if obj.get("choices") and "token_ts_ms" in obj
+    ]
+    assert len(ts_list) >= 2
+    for i in range(1, len(ts_list)):
+        assert ts_list[i] >= ts_list[i - 1]
+        diff = ts_list[i] - ts_list[i - 1]
+        assert isinstance(diff, int)
 

@@ -3,7 +3,7 @@
 """
 import os
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Literal, Optional
 
 try:
     from dotenv import load_dotenv
@@ -116,3 +116,14 @@ def get_skip_concurrency_env() -> tuple[int | None, str]:
         "skipped via MINI_VLLM_SKIP_CONCURRENCY",
     )
     return n, reason
+
+
+def get_stream_mode() -> Literal["char", "token"]:
+    """
+    Streaming chunking mode from MINI_VLLM_STREAM_MODE: ``char`` (default) or ``token``.
+    Unknown values fall back to ``char``.
+    """
+    raw = _env_str("MINI_VLLM_STREAM_MODE", "char").lower()
+    if raw == "token":
+        return "token"
+    return "char"
