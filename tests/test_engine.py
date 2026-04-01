@@ -3,6 +3,7 @@ import types
 import pytest
 import torch
 
+from src.core.config import load_runtime_flags
 from src.core.model import MiniVLLMEngine
 from src.core.ops import safe_rmsnorm
 
@@ -181,6 +182,11 @@ def test_rmsnorm_matches_torch_reference(monkeypatch):
     ref = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps) * w
     out = safe_rmsnorm(x, w, eps=eps)
     torch.testing.assert_close(out, ref, rtol=1e-3, atol=1e-4)
+
+
+def test_decode_attention_flag_exists(monkeypatch):
+    monkeypatch.setenv("MINI_VLLM_ENABLE_TRITON_DECODE_ATTN", "true")
+    assert load_runtime_flags().enable_decode_attn is True
 
 
 def test_benchmark_run_id_format():

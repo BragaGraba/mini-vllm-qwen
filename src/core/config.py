@@ -123,6 +123,20 @@ def get_triton_rmsnorm_enabled() -> bool:
     return _env_bool("MINI_VLLM_ENABLE_TRITON_RMSNORM", False)
 
 
+@dataclass
+class RuntimeOptFlags:
+    """Runtime optimization toggles; use load_runtime_flags() for env-current values."""
+
+    enable_decode_attn: bool
+
+
+def load_runtime_flags() -> RuntimeOptFlags:
+    """Build flags from the current process environment (fresh each call; test-friendly)."""
+    return RuntimeOptFlags(
+        enable_decode_attn=_env_bool("MINI_VLLM_ENABLE_TRITON_DECODE_ATTN", False),
+    )
+
+
 def get_stream_mode() -> Literal["char", "token"]:
     """
     Streaming chunking mode from MINI_VLLM_STREAM_MODE: ``char`` (default) or ``token``.
