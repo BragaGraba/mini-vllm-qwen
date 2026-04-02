@@ -72,7 +72,7 @@
 | §6 M1 指标补充 | `src/core/metrics.py`、`basic_metrics` 扩展字段 |
 | §6 M1 流式 | `MINI_VLLM_STREAM_MODE`、`token_ts_ms`（`src/core/model.py`、`src/api/server.py`） |
 | §6 M2 | `src/core/ops/triton_rmsnorm.py`、`MINI_VLLM_ENABLE_TRITON_RMSNORM`、`safe_rmsnorm` 与 PyTorch fallback；可选 `_optional_rmsnorm_warmup` |
-| §4.3 M3 合同 | `docs/perf/design/decode-attention-contract.md`、`load_runtime_flags()`、`MINI_VLLM_ENABLE_TRITON_DECODE_ATTN`（**kernel 实现仍属后续**） |
+| §4.3 M3 合同 | `docs/perf/design/decode-attention-contract.md`、`load_runtime_flags()`、`MINI_VLLM_ENABLE_TRITON_DECODE_ATTN`；`src/core/ops/decode_attention_runtime.py` + `MiniVLLMEngine` 接入 vLLM `TRITON_ATTN`；`docs/perf/baselines/m3-triton-attn-ab.md` |
 | §6 M4 验收门槛 | `docs/perf/decisions/m4-go-no-go.md`、根目录 `README.md` 中 M4 说明；`src/core/config.OPTIMIZATION_FLAG_ENV_KEYS`（开关预算 ≤3） |
 | 开发依赖 | `requirements-dev.txt`（含 `pytest`） |
 
@@ -268,7 +268,7 @@
 - 长上下文 + 多并发稳定性通过
 - 错误率与质量不退化
 
-**实现注记（当前仓库）：** 已提供执行合同与运行时开关（`load_runtime_flags().enable_decode_attn`、`MINI_VLLM_ENABLE_TRITON_DECODE_ATTN`），见 `docs/perf/design/decode-attention-contract.md`。**Decode attention Triton kernel 与接入 vLLM 路径尚未在本仓库实现。**
+**实现注记（当前仓库）：** 已提供执行合同与运行时开关（`load_runtime_flags().enable_decode_attn`、`MINI_VLLM_ENABLE_TRITON_DECODE_ATTN`），见 `docs/perf/design/decode-attention-contract.md`。**接入路径**：`MiniVLLMEngine` 在开关为真时为 `vllm.LLM` 传入 `AttentionConfig(backend=TRITON_ATTN)`，使用 vLLM V1 内置 `TritonAttentionBackend`。仓库内另有单测用 grouped decode 参考 kernel（`src/core/ops/triton_decode_attention.py`），**不替换** vLLM 内部实现。A/B 见 `docs/perf/baselines/m3-triton-attn-ab.md`。
 
 ---
 
@@ -351,7 +351,7 @@
 | M0 | 基线报表 + run_id + profiling 热点表 | 可稳定跑通基准集 | 指标报表可复现 |
 | M1 | 可配置流式 + 时间戳 + 扩展指标 | M0 逻辑完成 | `/metrics/basic` + SSE `token_ts_ms` |
 | M2 | RMSNorm Triton 试点 + fallback | M1 逻辑完成 | 代码/单测通过；**GPU 收益**另验 |
-| M3 | decode attention 优化 | M2 完成 | TPOT/吞吐达到阶段目标；**当前仅合同+开关** |
+| M3 | decode attention 优化 | M2 完成 | TPOT/吞吐达到阶段目标；**已接入 vLLM `TRITON_ATTN`**；收益以 A/B 报表为准 |
 | M4 | 次热点优化决策与落地 | M3 完成 | 仅在热点占比达阈值时推进；**决策文档与开关预算已备** |
 
 表后说明：**「逻辑完成」** 表示脚手架与接口已在仓库中；**§4.2 数值成功标准** 与 **24h 稳定性** 仍以实测报告为准，不由单测替代。

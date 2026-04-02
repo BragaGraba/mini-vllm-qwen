@@ -1,0 +1,2 @@
+run_id,mode,dtype,max_model_len,max_num_seqs,prompt_bucket,prompt_char_len,concurrency,skipped_reason,duration_ms,completion_len,completion_tokens_est,ttft_ms,tpot_ms,throughput_tok_per_s,error
+run-qwen-float16-1775094861,warm,float16,2048,1,short,512,1,,15479.1,392,98,15479.1,157.95,6.33,

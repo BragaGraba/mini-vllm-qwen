@@ -6,6 +6,8 @@ Design context: [§6 M0 / §2.4 实现状态摘要](../../superpowers/specs/2026
 
 **实测报告骨架（复制后按 `run_id` 重命名填写）：** [`TEMPLATE-run-report.md`](TEMPLATE-run-report.md)
 
+**M3 attention A/B：** [`m3-triton-attn-ab.md`](m3-triton-attn-ab.md)（产物目录 `m3-ab/`）
+
 ## Tests
 
 Install dev dependencies (includes `pytest`):

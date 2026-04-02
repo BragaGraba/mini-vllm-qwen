@@ -19,3 +19,11 @@
 
 - Set **`MINI_VLLM_ENABLE_TRITON_DECODE_ATTN=0`** (or unset) to force the legacy path. Runtime code should read flags via `load_runtime_flags()` from `src.core.config` so behavior tracks the process environment.
 - On compile failure, shape mismatch, or guarded error, implementations must fall back to the default attention implementation without crashing the server.
+
+## Implementation status (repo)
+
+**Production path:** When the env flag is **true**, [`MiniVLLMEngine`](../../../src/core/model.py) passes `attention_config=AttentionConfig(backend=AttentionBackendEnum.TRITON_ATTN)` into `vllm.LLM`, selecting vLLM V1’s built-in **TritonAttentionBackend** inside the EngineCore worker (prefill + decode). Helpers live in [`src/core/ops/decode_attention_runtime.py`](../../../src/core/ops/decode_attention_runtime.py).
+
+**Standalone reference kernel:** [`src/core/ops/triton_decode_attention.py`](../../../src/core/ops/triton_decode_attention.py) provides a grouped decode attention Triton kernel + PyTorch reference for **unit tests** only; it is not patched into vLLM internals.
+
+**A/B benchmark:** See [`docs/perf/baselines/m3-triton-attn-ab.md`](../baselines/m3-triton-attn-ab.md).

@@ -115,6 +115,10 @@ vllm serve ~/models/Qwen2.5-3B-Instruct   --dtype float16   --max-model-len 4096
 
 > 说明：完整 OpenAPI/Swagger 文档可在服务启动后访问 `http://localhost:8000/docs`。
 
+## M3 — Triton attention backend (vLLM `TRITON_ATTN`)
+
+Set `MINI_VLLM_ENABLE_TRITON_DECODE_ATTN=true` so `MiniVLLMEngine` passes `AttentionConfig(backend=TRITON_ATTN)` to `vllm.LLM` (vLLM V1’s built-in Triton attention path). Default / unset keeps vLLM auto backend selection (e.g. FlashAttention). Contract: `docs/perf/design/decode-attention-contract.md`. A/B commands: `docs/perf/baselines/m3-triton-attn-ab.md`, helper script: `scripts/m3_attention_backend_ab.sh`.
+
 ## Profiling
 
 Use `scripts/profile_inference.sh` to capture Nsight Systems (`nsys`) profiles of the benchmark driver and write a normalized hotspot summary under `docs/perf/profiles/`. See `docs/perf/profiles/README.md` for options, GPU requirements, and how it pairs with baseline CSVs.

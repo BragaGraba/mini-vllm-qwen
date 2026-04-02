@@ -1,0 +1,26 @@
+{
+  "run_id": "run-qwen-float16-1775094837",
+  "created_at_utc": "2026-04-02T01:53:57.902785+00:00",
+  "argv": [
+    "scripts/benchmark_inference.py",
+    "--execute",
+    "--mode",
+    "warm",
+    "--dtype",
+    "float16",
+    "--max-model-len",
+    "2048",
+    "--max-num-seqs",
+    "1",
+    "--prompt-buckets",
+    "short",
+    "--concurrency",
+    "1",
+    "--max-tokens",
+    "64",
+    "--output-dir",
+    "docs/perf/baselines/m3-ab/flash-default"
+  ],
+  "row_count": 1,
+  "run_id_scope": "one shared run_id per script invocation for all scenario rows"
+}

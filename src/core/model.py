@@ -7,6 +7,7 @@ import re
 from typing import Callable, Iterable, List, Sequence, Union
 
 from src.core.config import get_generation_config, get_model_config, get_stream_mode, get_triton_rmsnorm_enabled
+from src.core.ops.decode_attention_runtime import build_llm_extra_kwargs, install_decode_attention_patch
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -50,6 +51,9 @@ class MiniVLLMEngine:
             self._max_model_len,
             self._max_num_seqs,
         )
+        attn_kwargs = build_llm_extra_kwargs()
+        if attn_kwargs:
+            install_decode_attention_patch("LLM attention_config -> TRITON_ATTN")
         self._llm = LLM(
             model=self._model_name,
             max_model_len=self._max_model_len,
@@ -58,6 +62,7 @@ class MiniVLLMEngine:
             trust_remote_code=True,
             dtype=self._dtype,
             enforce_eager=True,
+            **attn_kwargs,
         )
         logger.info("Model loaded.")
         self._optional_rmsnorm_warmup()
