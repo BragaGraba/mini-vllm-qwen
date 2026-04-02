@@ -18,7 +18,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.core.benchmarking import build_run_id, parse_comma_list, scenario_row  # noqa: E402
+from src.core.benchmarking import (  # noqa: E402
+    RESULTS_CSV_FIELDS,
+    build_prompt_for_bucket,
+    build_run_id,
+    parse_comma_list,
+    run_single_scenario,
+    scenario_row,
+)
 from src.core.config import get_benchmark_output_dir, get_skip_concurrency_env  # noqa: E402
 
 
@@ -100,6 +107,96 @@ def _iter_scenarios(
     return rows
 
 
+try:
+    from src.core.model import MiniVLLMEngine
+except ImportError:
+    MiniVLLMEngine = None  # type: ignore[misc,assignment]
+
+
+def _run_execute(rows: list[dict], *, out_dir: str | None, run_id: str, max_tokens: int) -> int:
+    """Run real inference for every non-skipped scenario row and write results.csv."""
+    if MiniVLLMEngine is None:
+        print("Cannot import MiniVLLMEngine – is src/ on sys.path?", file=sys.stderr)
+        return 1
+
+    if not out_dir:
+        print("--execute requires --output-dir (or MINI_VLLM_BENCHMARK_OUT).", file=sys.stderr)
+        return 2
+
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    results_csv = out_path / "results.csv"
+
+    engine_cache: dict[str, MiniVLLMEngine] = {}
+
+    def _get_engine(row: dict) -> MiniVLLMEngine:
+        mode = row.get("mode", "warm")
+        dtype = row.get("dtype", "auto")
+        mml = int(row.get("max_model_len", 2048))
+        mns = int(row.get("max_num_seqs", 1))
+        if mode == "cold":
+            return MiniVLLMEngine(max_model_len=mml, max_num_seqs=mns, dtype=dtype)
+        cache_key = f"{dtype}-{mml}-{mns}"
+        if cache_key not in engine_cache:
+            engine_cache[cache_key] = MiniVLLMEngine(max_model_len=mml, max_num_seqs=mns, dtype=dtype)
+        return engine_cache[cache_key]
+
+    result_rows: list[dict] = []
+    total = len(rows)
+    for idx, row in enumerate(rows, 1):
+        skipped = row.get("skipped_reason")
+        if skipped:
+            r = {**row, "duration_ms": "", "completion_len": "", "completion_tokens_est": "",
+                 "ttft_ms": "", "tpot_ms": "", "throughput_tok_per_s": "", "error": f"skipped: {skipped}"}
+            result_rows.append(r)
+            print(f"[{idx}/{total}] SKIP  {row.get('mode')}/{row.get('prompt_bucket')}/c{row.get('concurrency')} – {skipped}")
+            continue
+
+        bucket = row.get("prompt_bucket", "short")
+        prompt = build_prompt_for_bucket(bucket)
+        conc = int(row.get("concurrency", 1))
+
+        engine = _get_engine(row)
+        print(f"[{idx}/{total}] RUN   {row.get('mode')}/{row.get('dtype')}/{row.get('prompt_bucket')}/c{conc} ...", end=" ", flush=True)
+
+        if conc <= 1:
+            timing = run_single_scenario(engine, prompt, max_tokens=max_tokens, temperature=0.0)
+        else:
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=conc) as pool:
+                futs = [pool.submit(run_single_scenario, engine, prompt, max_tokens=max_tokens, temperature=0.0)
+                        for _ in range(conc)]
+                timings = [f.result() for f in concurrent.futures.as_completed(futs)]
+            timing = max(timings, key=lambda t: t.duration_ms)
+
+        status = "ERR" if timing.error else f"{timing.duration_ms:.0f}ms"
+        print(status)
+
+        r = {
+            **row,
+            "duration_ms": f"{timing.duration_ms:.1f}",
+            "completion_len": str(timing.completion_len),
+            "completion_tokens_est": str(timing.completion_tokens_est),
+            "ttft_ms": f"{timing.ttft_ms:.1f}",
+            "tpot_ms": f"{timing.tpot_ms:.2f}",
+            "throughput_tok_per_s": f"{timing.throughput_tok_per_s:.2f}",
+            "error": timing.error,
+        }
+        result_rows.append(r)
+
+    with results_csv.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=RESULTS_CSV_FIELDS, extrasaction="ignore")
+        w.writeheader()
+        for r in result_rows:
+            line = {k: r.get(k, "") for k in RESULTS_CSV_FIELDS}
+            if line.get("skipped_reason") is None:
+                line["skipped_reason"] = ""
+            w.writerow(line)
+
+    print(f"\nResults written to {results_csv} ({len(result_rows)} rows)")
+    return 0
+
+
 def main() -> int:
     env_out = get_benchmark_output_dir()
     parser = argparse.ArgumentParser(
@@ -155,7 +252,13 @@ def main() -> int:
     parser.add_argument(
         "--execute",
         action="store_true",
-        help="Run real inference benchmark (not implemented in M0; exits with error).",
+        help="Run real inference benchmark: instantiate MiniVLLMEngine, generate per scenario, write results.csv.",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=128,
+        help="Max tokens to generate per scenario during --execute (default: 128).",
     )
     args = parser.parse_args()
 
@@ -223,8 +326,7 @@ def main() -> int:
         (p / "run_metadata.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
     if args.execute:
-        print("Real benchmark execution is not implemented in the M0 framework.", file=sys.stderr)
-        return 1
+        return _run_execute(rows, out_dir=out_dir, run_id=run_id, max_tokens=args.max_tokens)
 
     if args.dry_run:
         for r in rows:

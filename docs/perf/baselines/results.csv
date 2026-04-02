@@ -1,0 +1,9 @@
+run_id,mode,dtype,max_model_len,max_num_seqs,prompt_bucket,prompt_char_len,concurrency,skipped_reason,duration_ms,completion_len,completion_tokens_est,ttft_ms,tpot_ms,throughput_tok_per_s,error
+run-qwen-float16-1775041592,cold,float16,2048,1,short,512,1,,21774.3,392,98,21774.3,222.19,4.50,
+run-qwen-float16-1775041592,cold,float16,2048,1,medium,4096,1,,12022.1,354,88,12022.1,136.61,7.32,
+run-qwen-float16-1775041592,cold,float16,2048,2,short,512,1,,11598.7,392,98,11598.7,118.35,8.45,
+run-qwen-float16-1775041592,cold,float16,2048,2,medium,4096,1,,11354.8,354,88,11354.8,129.03,7.75,
+run-qwen-float16-1775041592,warm,float16,2048,1,short,512,1,,10245.3,392,98,10245.3,104.54,9.57,
+run-qwen-float16-1775041592,warm,float16,2048,1,medium,4096,1,,1591.8,354,88,1591.8,18.09,55.28,
+run-qwen-float16-1775041592,warm,float16,2048,2,short,512,1,,5322.6,0,0,0.0,0.00,0.00,Engine core initialization failed. See root cause above. Failed core proc(s): {}
+run-qwen-float16-1775041592,warm,float16,2048,2,medium,4096,1,,5221.5,0,0,0.0,0.00,0.00,Engine core initialization failed. See root cause above. Failed core proc(s): {}

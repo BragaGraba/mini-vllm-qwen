@@ -1,0 +1,20 @@
+{
+  "run_id": "run-qwen-float16-1775041592",
+  "bucket": "short",
+  "max_tokens": 64,
+  "total_cuda_time_us": 0,
+  "category_time_us": {
+    "attention": 0,
+    "norm": 0,
+    "mlp": 0,
+    "sampling": 0,
+    "other": 0
+  },
+  "category_pct": {
+    "attention": 0.0,
+    "norm": 0.0,
+    "mlp": 0.0,
+    "sampling": 0.0,
+    "other": 0.0
+  }
+}

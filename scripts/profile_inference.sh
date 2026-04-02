@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Profile inference benchmark path with Nsight Systems (nsys), or emit stub hotspot summary.
+# Supports --execute to run real inference under nsys instead of --dry-run.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -7,11 +8,17 @@ cd "$REPO_ROOT"
 
 RUN_ID=""
 OUT_DIR=""
+EXECUTE=false
+MAX_TOKENS=128
+BENCH_ARGS=""
 
 usage() {
-  echo "Usage: $0 --run-id <id> [--output-dir <dir>]" >&2
+  echo "Usage: $0 --run-id <id> [--output-dir <dir>] [--execute] [--max-tokens N] [-- extra benchmark_inference.py args]" >&2
   echo "  --run-id       Required. Names nsys output and hotspot summary files." >&2
   echo "  --output-dir   Directory for raw nsys reports (default: docs/perf/profiles/nsys)." >&2
+  echo "  --execute      Pass --execute to benchmark_inference.py (real inference, needs GPU)." >&2
+  echo "  --max-tokens   Max tokens per scenario (default: 128). Only used with --execute." >&2
+  echo "  --             Remaining args are forwarded to benchmark_inference.py." >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -24,9 +31,22 @@ while [[ $# -gt 0 ]]; do
       OUT_DIR="${2:-}"
       shift 2
       ;;
+    --execute)
+      EXECUTE=true
+      shift
+      ;;
+    --max-tokens)
+      MAX_TOKENS="${2:-128}"
+      shift 2
+      ;;
     -h | --help)
       usage
       exit 0
+      ;;
+    --)
+      shift
+      BENCH_ARGS="$*"
+      break
       ;;
     *)
       echo "error: unknown argument: $1" >&2
@@ -82,12 +102,18 @@ EOF
 
 write_nsys_placeholder_summary() {
   local nsys_out_rel="${OUT_DIR}/${RUN_ID}/nsys"
+  local mode_note
+  if [[ "$EXECUTE" == "true" ]]; then
+    mode_note="> **Mode:** \`--execute\` — real GPU inference was profiled. The hotspot percentages below reflect actual kernel execution."
+  else
+    mode_note="> **Limitation — \`--dry-run\`:** The profile reflects **Python / orchestration overhead** only. Re-run with \`--execute\` on a GPU host for kernel-level hotspots."
+  fi
   cat > "$SUMMARY_PATH" <<EOF
 # Hotspot summary (\`${RUN_ID}\`)
 
 > **Source:** \`nsys profile\` completed. Raw report prefix: \`${nsys_out_rel}\` (Nsight Systems adds \`.nsys-rep\` / \`.qdstrm\` beside this prefix).
 
-> **Limitation — \`--dry-run\`:** The wrapped command runs \`scripts/benchmark_inference.py\` with \`--dry-run\` and the **smallest** scenario matrix so the run finishes quickly. That path builds the benchmark matrix in Python only and does **not** execute GPU inference kernels. The profile therefore reflects **Python / orchestration overhead**, not a representative GPU hotspot split. For kernel-level hotspots, profile a real inference workload (e.g. once \`--execute\` exists, or by profiling the live API server) and pass any extra \`benchmark_inference.py\` arguments you need.
+${mode_note}
 
 ## attention
 
@@ -117,20 +143,25 @@ if ! command -v nsys >/dev/null 2>&1; then
   exit 0
 fi
 
-# Minimal matrix + dry-run: fast, no GPU inference (see limitation in summary).
+BENCH_RESULTS_DIR="${OUT_DIR}/${RUN_ID}"
+
+if [[ "$EXECUTE" == "true" ]]; then
+  DEFAULT_BENCH_ARGS="--execute --max-tokens ${MAX_TOKENS} --mode warm --dtype fp16 --max-model-len 2048 --max-num-seqs 1 --prompt-buckets short,medium --concurrency 1 --output-dir ${BENCH_RESULTS_DIR}"
+  if [[ -n "$BENCH_ARGS" ]]; then
+    FINAL_ARGS="--execute --max-tokens ${MAX_TOKENS} ${BENCH_ARGS}"
+  else
+    FINAL_ARGS="$DEFAULT_BENCH_ARGS"
+  fi
+else
+  FINAL_ARGS="--dry-run --mode warm --dtype fp16 --max-model-len 2048 --max-num-seqs 1 --prompt-buckets short --concurrency 1"
+fi
+
 nsys profile \
   -o "${OUT_DIR}/${RUN_ID}/nsys" \
   --trace=cuda,nvtx \
   --force-overwrite true \
   -- \
-  python scripts/benchmark_inference.py \
-  --dry-run \
-  --mode warm \
-  --dtype fp16 \
-  --max-model-len 2048 \
-  --max-num-seqs 1 \
-  --prompt-buckets short \
-  --concurrency 1
+  python scripts/benchmark_inference.py ${FINAL_ARGS}
 
 write_nsys_placeholder_summary
 exit 0

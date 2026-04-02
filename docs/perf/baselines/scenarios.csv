@@ -1,0 +1,9 @@
+run_id,mode,dtype,max_model_len,max_num_seqs,prompt_bucket,prompt_char_len,concurrency,skipped_reason
+run-qwen-float16-1775041592,cold,float16,2048,1,short,512,1,
+run-qwen-float16-1775041592,cold,float16,2048,1,medium,4096,1,
+run-qwen-float16-1775041592,cold,float16,2048,2,short,512,1,
+run-qwen-float16-1775041592,cold,float16,2048,2,medium,4096,1,
+run-qwen-float16-1775041592,warm,float16,2048,1,short,512,1,
+run-qwen-float16-1775041592,warm,float16,2048,1,medium,4096,1,
+run-qwen-float16-1775041592,warm,float16,2048,2,short,512,1,
+run-qwen-float16-1775041592,warm,float16,2048,2,medium,4096,1,

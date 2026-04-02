@@ -1,7 +1,10 @@
 import types
+from pathlib import Path
 
 import pytest
 import torch
+
+ROOT = Path(__file__).resolve().parents[1]
 
 from src.core.config import OPTIMIZATION_FLAG_ENV_KEYS, load_runtime_flags
 from src.core.model import MiniVLLMEngine
@@ -204,3 +207,99 @@ def test_benchmark_run_id_format():
     assert re.match(r"^run-qwen-fp16-\d+$", run_id)
     run_id_pathy = build_run_id("~/models/Qwen/2.5", "bfloat16")
     assert run_id_pathy.startswith("run-") and "bfloat16" in run_id_pathy and "qwen" in run_id_pathy
+
+
+def test_run_single_scenario_collects_timing():
+    from src.core.benchmarking import TimingResult, run_single_scenario
+
+    engine = MiniVLLMEngine()
+    _patch_engine_llm(engine, DummyLLM())
+    result = run_single_scenario(engine, "hello world", max_tokens=32)
+    assert isinstance(result, TimingResult)
+    assert result.duration_ms > 0
+    assert result.completion_len > 0
+    assert result.completion_tokens_est >= 1
+    assert result.error == ""
+
+
+def test_run_single_scenario_captures_error():
+    from src.core.benchmarking import run_single_scenario
+
+    class BrokenEngine:
+        def generate(self, *a, **kw):
+            raise RuntimeError("boom")
+
+    result = run_single_scenario(BrokenEngine(), "fail", max_tokens=8)
+    assert "boom" in result.error
+    assert result.duration_ms > 0
+
+
+def test_benchmark_execute_writes_results_csv(tmp_path, monkeypatch):
+    """Simulate --execute by calling _run_execute with mock rows and a patched engine factory."""
+    import csv as csv_mod
+    import sys as sys_mod
+
+    sys_mod.path.insert(0, str(ROOT))
+
+    from scripts import benchmark_inference as bm_mod
+
+    class FakeEngine:
+        def __init__(self, **kw):
+            self._llm = True
+
+        def generate(self, prompt, *, stream=False, max_tokens=128, temperature=0.0, top_p=1.0):
+            return "benchmark output"
+
+    monkeypatch.setattr(bm_mod, "MiniVLLMEngine", FakeEngine)
+
+    rows = [
+        {"run_id": "test-run", "mode": "warm", "dtype": "fp16",
+         "max_model_len": 2048, "max_num_seqs": 1, "prompt_bucket": "short",
+         "prompt_char_len": 512, "concurrency": 1},
+        {"run_id": "test-run", "mode": "warm", "dtype": "fp16",
+         "max_model_len": 2048, "max_num_seqs": 1, "prompt_bucket": "short",
+         "prompt_char_len": 512, "concurrency": 1, "skipped_reason": "test skip"},
+    ]
+    ret = bm_mod._run_execute(rows, out_dir=str(tmp_path), run_id="test-run", max_tokens=16)
+    assert ret == 0
+
+    results_csv = tmp_path / "results.csv"
+    assert results_csv.exists()
+    with results_csv.open() as f:
+        reader = list(csv_mod.DictReader(f))
+    assert len(reader) == 2
+    assert reader[0]["duration_ms"] != ""
+    assert "skipped" in reader[1]["error"]
+
+
+def test_build_prompt_for_bucket():
+    from src.core.benchmarking import build_prompt_for_bucket
+
+    for bucket in ("short", "medium", "long"):
+        prompt = build_prompt_for_bucket(bucket)
+        from src.core.benchmarking import PROMPT_BUCKET_CHAR_LENGTHS
+        assert len(prompt) == PROMPT_BUCKET_CHAR_LENGTHS[bucket]
+
+
+@pytest.mark.parametrize(
+    "hidden_size,dtype",
+    [
+        (896, torch.float32),
+        (1536, torch.float32),
+        (2048, torch.float32),
+        (4096, torch.float32),
+        (896, torch.float16),
+        (2048, torch.float16),
+    ],
+)
+def test_rmsnorm_numeric_tolerance_real_shapes(hidden_size, dtype):
+    """Validate safe_rmsnorm matches torch reference for Qwen-family hidden sizes."""
+    from src.core.ops import torch_rmsnorm_fallback
+
+    batch = 4
+    eps = 1e-6
+    x = torch.randn(batch, hidden_size, dtype=dtype)
+    w = torch.randn(hidden_size, dtype=dtype)
+    ref = torch_rmsnorm_fallback(x, w, eps)
+    out = safe_rmsnorm(x, w, eps)
+    torch.testing.assert_close(out, ref, rtol=1e-3, atol=1e-4)
