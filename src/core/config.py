@@ -11,7 +11,7 @@ try:
 except ImportError:
     pass
 
-# 优化相关环境开关的统一清单（设计约束：累计不超过 3 个）；新增开关前必须先评估预算并更新此处与测试。
+# 优化相关环境开关清单（累计不超过 3 个）。
 OPTIMIZATION_FLAG_ENV_KEYS: tuple[str, ...] = (
     "MINI_VLLM_ENABLE_TRITON_RMSNORM",
     "MINI_VLLM_ENABLE_TRITON_DECODE_ATTN",
@@ -107,25 +107,8 @@ def get_app_config() -> AppConfig:
     return _app_config
 
 
-def get_benchmark_output_dir() -> str:
-    """Directory for benchmark CSV/metadata; empty when unset."""
-    return _env_path("MINI_VLLM_BENCHMARK_OUT", "")
-
-
-def get_skip_concurrency_env() -> tuple[int | None, str]:
-    """If MINI_VLLM_SKIP_CONCURRENCY is set to a positive int, that concurrency is marked skipped."""
-    n = _env_int("MINI_VLLM_SKIP_CONCURRENCY", 0)
-    if n <= 0:
-        return None, ""
-    reason = _env_str(
-        "MINI_VLLM_SKIP_CONCURRENCY_REASON",
-        "skipped via MINI_VLLM_SKIP_CONCURRENCY",
-    )
-    return n, reason
-
-
 def get_triton_rmsnorm_enabled() -> bool:
-    """True when ``MINI_VLLM_ENABLE_TRITON_RMSNORM`` requests the Triton RMSNorm pilot (with runtime fallback)."""
+    """True when ``MINI_VLLM_ENABLE_TRITON_RMSNORM`` requests the Triton RMSNorm path (with runtime fallback)."""
     return _env_bool("MINI_VLLM_ENABLE_TRITON_RMSNORM", False)
 
 
@@ -137,7 +120,7 @@ class RuntimeOptFlags:
 
 
 def load_runtime_flags() -> RuntimeOptFlags:
-    """Build flags from the current process environment (fresh each call; test-friendly)."""
+    """Build flags from the current process environment (fresh each call)."""
     return RuntimeOptFlags(
         enable_decode_attn=_env_bool("MINI_VLLM_ENABLE_TRITON_DECODE_ATTN", False),
     )
