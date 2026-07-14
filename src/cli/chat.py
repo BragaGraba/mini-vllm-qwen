@@ -75,6 +75,7 @@ def run_cli() -> None:
         print("Assistant: ", end="", flush=True)
         try:
             if args.stream:
+                parts: list[str] = []
                 for chunk in engine.generate(
                     prompt,
                     stream=True,
@@ -82,17 +83,10 @@ def run_cli() -> None:
                     temperature=args.temperature,
                     top_p=args.top_p,
                 ):
+                    parts.append(chunk)
                     print(chunk, end="", flush=True)
                 print()
-                # 为对话历史记录完整回答文本
-                # 这里简单重新调用一次非流式生成，保证历史中是完整文本
-                full_reply = engine.generate(
-                    prompt,
-                    stream=False,
-                    max_tokens=args.max_tokens,
-                    temperature=args.temperature,
-                    top_p=args.top_p,
-                )
+                full_reply = "".join(parts)
             else:
                 full_reply = engine.generate(
                     prompt,

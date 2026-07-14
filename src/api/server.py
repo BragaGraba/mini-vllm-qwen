@@ -22,11 +22,10 @@ app = FastAPI(title="Mini vLLM Qwen API", version="0.1.0")
 
 
 class MiniVLLMState:
-    """简单的全局状态，封装引擎与共享会话。"""
+    """进程级状态：共享引擎。会话按请求构造，不跨请求复用。"""
 
     def __init__(self) -> None:
         self.engine = MiniVLLMEngine()
-        self.conversation = Conversation()
 
 
 state = MiniVLLMState()
@@ -76,25 +75,10 @@ def health() -> Dict[str, Any]:
 
 def _build_prompt(messages: List[Dict[str, str]]) -> str:
     """
-    从 OpenAI 风格 messages 构建/更新 Conversation，并返回 prompt。
-    请求体示例：
-    {
-      "model": "qwen",
-      "messages": [
-        {"role": "system", "content": "..."},
-        {"role": "user", "content": "..."}
-      ],
-      "stream": false,
-      "max_tokens": 256,
-      "temperature": 0.7,
-      "top_p": 0.9
-    }
+    从本次请求的 OpenAI 风格 messages 构造独立 Conversation，并返回 prompt。
+    不读写全局会话；多客户端并发互不影响。客户端负责在下一次请求中带回完整历史。
     """
-    conv = state.conversation
-
-    # 重置会话：根据请求中的 messages 重新构造简单历史
-    conv.messages.clear()
-    conv.system_prompt = None
+    conv = Conversation()
 
     for msg in messages:
         role = msg.get("role", "user")
@@ -174,8 +158,6 @@ def chat_completions(body: Dict[str, Any]) -> Any:
                 top_p=top_p,
             )
             duration_ms = (time.perf_counter() - start_ts) * 1000.0
-            # 更新会话历史与监控
-            state.conversation.append_assistant(content)
             comp_len = len(content)
             ct_est = _completion_tokens_estimate(comp_len)
             # 非流式无首 token 边界：TTFT/首 token 时间近似为整段耗时（见 limitation）
@@ -232,7 +214,6 @@ def chat_completions(body: Dict[str, Any]) -> Any:
 
                 full_text = "".join(buffer)
                 duration_ms = (time.perf_counter() - start_ts) * 1000.0
-                state.conversation.append_assistant(full_text)
                 comp_len = len(full_text)
                 ct_est = _completion_tokens_estimate(comp_len)
                 ttft = first_chunk_ms if first_chunk_ms is not None else duration_ms

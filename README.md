@@ -7,7 +7,7 @@
 - **操作系统**：Linux / WSL2
 - **Python**：推荐 `Python 3.10` 及以上
 - **GPU / CUDA**：NVIDIA GPU（示例：RTX 3060 12GB，驱动 536.19，CUDA 12.2）
-- **依赖**：`pip install -r requirements.txt`（含 FastAPI / Uvicorn；vLLM 需自行按环境安装）
+- **依赖**：`pip install -r requirements.txt` 安装 FastAPI、Uvicorn、python-dotenv 与 **vLLM**（`vllm>=0.4.0`；需匹配本机 CUDA/驱动的预编译轮子，安装失败时按 [vLLM 文档](https://docs.vllm.ai/) 选择对应平台包）
 
 ## 安装与运行
 
@@ -102,7 +102,7 @@ OpenAPI：`http://localhost:8000/docs`。Web UI：服务根路径 `/`。
 
 | 变量 | 作用 |
 |------|------|
-| `MINI_VLLM_ENABLE_TRITON_RMSNORM=true` | Triton RMSNorm（失败回退 PyTorch） |
+| `MINI_VLLM_ENABLE_TRITON_RMSNORM=true` | Triton RMSNorm（**当前仅暖机探测，未接入 vLLM 前向**；真接入方案见工程讨论） |
 | `MINI_VLLM_ENABLE_TRITON_DECODE_ATTN=true` | vLLM `AttentionConfig(backend=TRITON_ATTN)` |
 
 流式切分：`MINI_VLLM_STREAM_MODE=char|token`（默认 `char`；仍为完整生成后再切分，非内核级逐 token）。
